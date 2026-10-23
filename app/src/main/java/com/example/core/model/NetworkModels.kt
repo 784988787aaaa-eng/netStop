@@ -142,6 +142,59 @@ enum class ControlCapabilityStatus(
 }
 
 /**
+ * حالات دورة حياة محرك الشبكة و VPN المحلي في واجهة المستخدم (القسم الثاني والثالث).
+ */
+enum class EngineUiState(
+    val titleAr: String,
+    val descriptionAr: String,
+    val canToggle: Boolean,
+    val isLoading: Boolean
+) {
+    STOPPED(
+        titleAr = "المحرك متوقف",
+        descriptionAr = "المراقبة المحلية نشطة لقراءة الإحصاءات فقط؛ اضغط لتشغيل محرك VPN وتفعيل الحظر والتقييد",
+        canToggle = true,
+        isLoading = false
+    ),
+    AWAITING_CONSENT(
+        titleAr = "بانتظار موافقة النظام",
+        descriptionAr = "يرجى قبول نافذة إذن VPN المعروضة من نظام أندرويد لتفعيل المحرك",
+        canToggle = false,
+        isLoading = true
+    ),
+    STARTING(
+        titleAr = "جاري تشغيل المحرك...",
+        descriptionAr = "يتم تهيئة واجهة TUN وفحص سلامة مكدس الحزم وقنوات التوجيه",
+        canToggle = false,
+        isLoading = true
+    ),
+    RUNNING(
+        titleAr = "محرك التحكم نشط",
+        descriptionAr = "نفق VPN المحلي معزول؛ يتم تطبيق سياسات الحظر الفعلي على النواة وتقييد السرعة ومراقبة التدفقات",
+        canToggle = true,
+        isLoading = false
+    ),
+    STOPPING(
+        titleAr = "جاري إيقاف المحرك...",
+        descriptionAr = "يتم إغلاق واجهة TUN وتحرير الموارد والعودة إلى وضع المراقبة الخفيفة",
+        canToggle = false,
+        isLoading = true
+    ),
+    FAILED(
+        titleAr = "فشل في تشغيل المحرك",
+        descriptionAr = "حدث خطأ أثناء تأسيس واجهة VPN؛ تحقق من الأذونات أو اضغط لإعادة المحاولة",
+        canToggle = true,
+        isLoading = false
+    ),
+    REVOKED_OR_LOST(
+        titleAr = "تم سحب إذن VPN",
+        descriptionAr = "تم إلغاء صلاحية VPN من قبل المستخدم أو بواسطة تطبيق شبكة آخر",
+        canToggle = true,
+        isLoading = false
+    );
+}
+
+/**
  * قاعدة تحكم مفصولة المفاهيم (السرعة القصوى، نوع الشبكة، المدة، الأولوية).
  */
 data class TrafficRule(

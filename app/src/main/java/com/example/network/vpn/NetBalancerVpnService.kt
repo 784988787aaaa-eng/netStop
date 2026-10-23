@@ -255,6 +255,12 @@ object VpnEngineController {
             unattributedCount.incrementAndGet()
         }
 
+        val isDownload = header.destinationIp == "10.215.173.1" ||
+            header.destinationIp.startsWith("fd00:6e62") ||
+            header.destinationIp == "127.0.0.1" ||
+            header.destinationIp == "::1"
+        val isOutbound = !isDownload
+
         val isBlockedPkg = _blockedPackages.value.contains(identity.packageName)
         val rlDecision = if (isBlockedPkg) {
             RateLimitDecision.DropBlockedByPolicy
@@ -262,7 +268,7 @@ object VpnEngineController {
             rateLimiter.acquirePacket(
                 uid = identity.uid,
                 packetSizeBytes = header.totalLengthBytes,
-                isDownload = false
+                isDownload = isDownload
             )
         }
 
@@ -270,13 +276,14 @@ object VpnEngineController {
             is RateLimitDecision.DropBlockedByPolicy -> {
                 val dropped = droppedByPolicyCount.incrementAndGet()
                 if (dropped % 5L == 1L) {
+                    val dirText = if (isOutbound) "صادرة إلى ${header.destinationIp}:${header.destinationPort}" else "واردة من ${header.sourceIp}:${header.sourcePort}"
                     emitAudit(
                         AuditLogItem(
                             eventType = AuditEventType.CONNECTION_BLOCKED,
                             uid = identity.uid,
                             packageName = identity.packageName,
                             appName = identity.appName,
-                            summaryAr = "حظر حزمة ${header.protocol.label} (${header.ipVersion.label}) متجهة إلى ${header.destinationIp}:${header.destinationPort}",
+                            summaryAr = "حظر حزمة ${header.protocol.label} (${header.ipVersion.label}) $dirText",
                             technicalDetails = header.dnsQueryDomain?.let { "استعلام DNS: $it" } ?: header.toFiveTupleKey()
                         )
                     )
@@ -293,7 +300,7 @@ object VpnEngineController {
             uid = identity.uid,
             packageName = identity.packageName,
             appName = identity.appName,
-            isOutbound = true,
+            isOutbound = isOutbound,
             targetState = flowState
         )
 

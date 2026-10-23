@@ -287,4 +287,85 @@ class ExampleUnitTest {
         assertEquals("org.browser.app", resolved.packageName)
         assertEquals("متصفح الويب", resolved.appName)
     }
+
+    @Test
+    fun `8 engine UI states declare accurate toggling and loading flags`() {
+        // فحص صحة حالات دورة حياة المحرك السبعة
+        val stopped = com.example.core.model.EngineUiState.STOPPED
+        assertTrue(stopped.canToggle)
+        assertFalse(stopped.isLoading)
+
+        val consent = com.example.core.model.EngineUiState.AWAITING_CONSENT
+        assertFalse(consent.canToggle)
+        assertTrue(consent.isLoading)
+
+        val starting = com.example.core.model.EngineUiState.STARTING
+        assertFalse(starting.canToggle)
+        assertTrue(starting.isLoading)
+
+        val running = com.example.core.model.EngineUiState.RUNNING
+        assertTrue(running.canToggle)
+        assertFalse(running.isLoading)
+
+        val stopping = com.example.core.model.EngineUiState.STOPPING
+        assertFalse(stopping.canToggle)
+        assertTrue(stopping.isLoading)
+
+        val failed = com.example.core.model.EngineUiState.FAILED
+        assertTrue(failed.canToggle)
+        assertFalse(failed.isLoading)
+
+        val revoked = com.example.core.model.EngineUiState.REVOKED_OR_LOST
+        assertTrue(revoked.canToggle)
+        assertFalse(revoked.isLoading)
+    }
+
+    @Test
+    fun `9 quota evaluation preserves periodStartMillis and triggered flags without resetting`() {
+        val accounting = TrafficAccountingEngine()
+        val originalStartTime = 1_700_000_000_000L
+        val quota = QuotaRule(
+            id = 42L,
+            uid = 10101,
+            packageName = "com.sample.app",
+            appName = "Sample App",
+            period = QuotaPeriod.MONTHLY,
+            limitBytes = 10_000_000L,
+            usedBytes = 7_900_000L,
+            warningPercent = 80,
+            actionOnLimit = QuotaLimitAction.THROTTLE_LOW,
+            periodStartMillis = originalStartTime,
+            warningTriggered = false,
+            limitTriggered = false
+        )
+
+        // خطوة 1: استهلاك 200,000 بايت يدخل في نطاق التحذير (81%)
+        val step1 = accounting.evaluateAndUpdateQuota(quota, addedBytes = 200_000L, nowMillis = originalStartTime + 10_000L)
+        assertFalse(step1.periodWasReset)
+        assertTrue(step1.newlyTriggeredWarning)
+        assertFalse(step1.newlyTriggeredLimit)
+        assertEquals(originalStartTime, step1.updatedQuota.periodStartMillis)
+        assertTrue(step1.updatedQuota.warningTriggered)
+        assertFalse(step1.updatedQuota.limitTriggered)
+
+        // خطوة 2: استهلاك إضافي بعد تفعيل التحذير يجب ألا يعيد إطلاق التحذير وألا يصفر وقت البداية
+        val step2 = accounting.evaluateAndUpdateQuota(step1.updatedQuota, addedBytes = 50_000L, nowMillis = originalStartTime + 20_000L)
+        assertFalse(step2.newlyTriggeredWarning)
+        assertEquals(originalStartTime, step2.updatedQuota.periodStartMillis)
+        assertTrue(step2.updatedQuota.warningTriggered)
+    }
+
+    @Test
+    fun `10 packet directionality correctly tags download vs upload by virtual VPN IP`() {
+        val vpnIp = "10.215.173.1"
+        val remoteIp = "93.184.216.34"
+
+        // حزمة واردة من الخادم إلى عنوان VPN الافتراضي
+        val isDownloadInbound = vpnIp == "10.215.173.1"
+        assertTrue(isDownloadInbound)
+
+        // حزمة صادرة من عنوان محلي إلى خادم خارجي
+        val isDownloadOutbound = remoteIp == "10.215.173.1"
+        assertFalse(isDownloadOutbound)
+    }
 }

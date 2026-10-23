@@ -221,6 +221,12 @@ interface NetBalancerDao {
     @Query("DELETE FROM quota_rules WHERE id = :quotaId")
     suspend fun deleteQuotaById(quotaId: Long)
 
+    @Query("SELECT * FROM quota_rules WHERE id = :quotaId LIMIT 1")
+    suspend fun getQuotaById(quotaId: Long): QuotaEntity?
+
+    @Query("UPDATE quota_rules SET usedBytes = :usedBytes, warningTriggered = :warningTriggered, limitTriggered = :limitTriggered WHERE id = :quotaId")
+    suspend fun updateQuotaProgress(quotaId: Long, usedBytes: Long, warningTriggered: Boolean, limitTriggered: Boolean)
+
     // الإحصاءات المجمعة (Aggregated Usage)
     @Query("SELECT * FROM app_usage_totals")
     fun observeAllUsageTotals(): Flow<List<AppUsageTotalEntity>>

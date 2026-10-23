@@ -122,6 +122,7 @@ fun NetBalancerAppRoot(
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val engineUiState by viewModel.engineUiState.collectAsStateWithLifecycle()
     val settings by viewModel.settingsState.collectAsStateWithLifecycle()
     val rules by viewModel.rulesState.collectAsStateWithLifecycle()
     val quotas by viewModel.quotasState.collectAsStateWithLifecycle()
@@ -129,37 +130,50 @@ fun NetBalancerAppRoot(
     val diagnostics by viewModel.engineDiagnostics.collectAsStateWithLifecycle()
     val activeFlows by viewModel.activeFlows.collectAsStateWithLifecycle()
 
+    var proceedToVpnConsent: (() -> Unit)? = null
+
     // مشغل طلب موافقة خدمة VPN الرسمية في أندرويد
     val vpnConsentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             viewModel.startVpnEngine()
+        } else {
+            viewModel.setConsentRejected()
         }
         viewModel.refreshPermissionsAndCapabilities()
     }
 
-    // مشغل طلب صلاحية الإشعارات على أندرويد 13+
+    proceedToVpnConsent = {
+        val prepareIntent = viewModel.prepareVpnServiceIntent()
+        if (prepareIntent != null) {
+            viewModel.setAwaitingConsent()
+            vpnConsentLauncher.launch(prepareIntent)
+        } else {
+            viewModel.startVpnEngine()
+        }
+    }
+
+    // مشغل طلب صلاحية الإشعارات على أندرويد 13+ مع تسلسل غير متداخل
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { _ ->
         viewModel.refreshPermissionsAndCapabilities()
+        proceedToVpnConsent?.invoke()
     }
 
     val handleToggleVpn: () -> Unit = {
-        if (diagnostics.isVpnRunning) {
-            viewModel.stopVpnEngine()
-        } else {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                !PermissionAndCapabilityHelper.hasNotificationPermission(context)
-            ) {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-            val prepareIntent = viewModel.prepareVpnServiceIntent()
-            if (prepareIntent != null) {
-                vpnConsentLauncher.launch(prepareIntent)
+        if (engineUiState.canToggle) {
+            if (diagnostics.isVpnRunning || engineUiState == com.example.core.model.EngineUiState.RUNNING) {
+                viewModel.stopVpnEngine()
             } else {
-                viewModel.startVpnEngine()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    !PermissionAndCapabilityHelper.hasNotificationPermission(context)
+                ) {
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    proceedToVpnConsent?.invoke()
+                }
             }
         }
     }
@@ -216,12 +230,15 @@ fun NetBalancerAppRoot(
                         }
                     },
                     actions = {
+                        val pillColor = when (engineUiState) {
+                            com.example.core.model.EngineUiState.RUNNING -> NetSuccessEmerald
+                            com.example.core.model.EngineUiState.FAILED, com.example.core.model.EngineUiState.REVOKED_OR_LOST -> MaterialTheme.colorScheme.error
+                            com.example.core.model.EngineUiState.STARTING, com.example.core.model.EngineUiState.AWAITING_CONSENT -> NetPrimaryBlue
+                            com.example.core.model.EngineUiState.STOPPING -> NetPrimaryBlue
+                            com.example.core.model.EngineUiState.STOPPED -> NetPrimaryBlue
+                        }
                         Surface(
-                            color = if (diagnostics.isVpnRunning) {
-                                NetSuccessEmerald.copy(alpha = 0.16f)
-                            } else {
-                                NetPrimaryBlue.copy(alpha = 0.16f)
-                            },
+                            color = pillColor.copy(alpha = 0.16f),
                             shape = RoundedCornerShape(20.dp),
                             modifier = Modifier.padding(end = 12.dp)
                         ) {
@@ -234,12 +251,12 @@ fun NetBalancerAppRoot(
                                     modifier = Modifier
                                         .size(8.dp)
                                         .clip(CircleShape)
-                                        .background(if (diagnostics.isVpnRunning) NetSuccessEmerald else NetPrimaryBlue)
+                                        .background(pillColor)
                                 )
                                 Text(
-                                    text = if (diagnostics.isVpnRunning) "VPN نشط" else "مراقبة محلية",
+                                    text = engineUiState.titleAr,
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = if (diagnostics.isVpnRunning) NetSuccessEmerald else NetPrimaryBlue
+                                    color = pillColor
                                 )
                             }
                         }
@@ -348,6 +365,7 @@ fun NetBalancerAppRoot(
                         NetBalancerDestination.DASHBOARD -> {
                             DashboardScreen(
                                 diagnostics = diagnostics,
+                                engineUiState = engineUiState,
                                 totalDownloadBps = uiState.totalDownloadBps,
                                 totalUploadBps = uiState.totalUploadBps,
                                 todayTotalBytes = uiState.todayTotalBytes,

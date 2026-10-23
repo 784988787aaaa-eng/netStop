@@ -10,6 +10,7 @@ import com.example.core.model.AuditEventType
 import com.example.core.model.AuditLogItem
 import com.example.core.model.BandwidthUnit
 import com.example.core.model.EngineDiagnostics
+import com.example.core.model.EngineUiState
 import com.example.core.model.FlowRecord
 import com.example.core.model.NetworkTypeCondition
 import com.example.core.model.PolicyPreset
@@ -100,6 +101,9 @@ class NetBalancerViewModel(application: Application) : AndroidViewModel(applicat
     private val _uiState = MutableStateFlow(NetBalancerUiState())
     val uiState: StateFlow<NetBalancerUiState> = _uiState.asStateFlow()
 
+    private val _engineUiState = MutableStateFlow(EngineUiState.STOPPED)
+    val engineUiState: StateFlow<EngineUiState> = _engineUiState.asStateFlow()
+
     private val navigationBackStack = ArrayDeque<NetBalancerDestination>()
 
     val settingsState: StateFlow<UserSettingsState> = preferencesRepository.settingsFlow.stateIn(
@@ -137,6 +141,17 @@ class NetBalancerViewModel(application: Application) : AndroidViewModel(applicat
         VpnEngineController.setAuditCallback { item ->
             viewModelScope.launch {
                 repository.logAuditEvent(item)
+            }
+        }
+
+        viewModelScope.launch {
+            engineDiagnostics.collect { diag ->
+                val current = _engineUiState.value
+                if (diag.isVpnRunning) {
+                    _engineUiState.value = EngineUiState.RUNNING
+                } else if (current == EngineUiState.RUNNING || current == EngineUiState.STOPPING) {
+                    _engineUiState.value = EngineUiState.STOPPED
+                }
             }
         }
 
@@ -271,34 +286,75 @@ class NetBalancerViewModel(application: Application) : AndroidViewModel(applicat
         return PermissionAndCapabilityHelper.prepareVpnIntent(appContext)
     }
 
+    fun setAwaitingConsent() {
+        _engineUiState.value = EngineUiState.AWAITING_CONSENT
+    }
+
+    fun setConsentRejected() {
+        _engineUiState.value = EngineUiState.STOPPED
+        _uiState.update { it.copy(statusBannerMessageAr = "تم إلغاء موافقة خدمة VPN من قبل المستخدم") }
+    }
+
+    fun setEngineStarting() {
+        _engineUiState.value = EngineUiState.STARTING
+    }
+
+    fun setEngineStopping() {
+        _engineUiState.value = EngineUiState.STOPPING
+    }
+
+    fun setEngineFailed(reason: String) {
+        _engineUiState.value = EngineUiState.FAILED
+        _uiState.update { it.copy(statusBannerMessageAr = reason) }
+    }
+
+    fun setEngineRevoked() {
+        _engineUiState.value = EngineUiState.REVOKED_OR_LOST
+        _uiState.update { it.copy(statusBannerMessageAr = "تم سحب إذن VPN من إعدادات النظام") }
+    }
+
     fun startVpnEngine() {
-        NetBalancerVpnService.startService(appContext)
-        viewModelScope.launch {
-            repository.syncRulesWithEngine()
-            repository.logAuditEvent(
-                AuditLogItem(
-                    eventType = AuditEventType.ENGINE_STARTED,
-                    summaryAr = "تم تشغيل محرك VPN المحلي وتفعيل سياسات الحظر وتحديد السرعة"
+        val current = _engineUiState.value
+        if (current == EngineUiState.RUNNING) return
+        _engineUiState.value = EngineUiState.STARTING
+        try {
+            NetBalancerVpnService.startService(appContext)
+            viewModelScope.launch {
+                repository.syncRulesWithEngine()
+                repository.logAuditEvent(
+                    AuditLogItem(
+                        eventType = AuditEventType.ENGINE_STARTED,
+                        summaryAr = "تم تشغيل محرك VPN المحلي وتفعيل سياسات الحظر وتحديد السرعة"
+                    )
                 )
-            )
-            _uiState.update {
-                it.copy(statusBannerMessageAr = "تم تشغيل محرك الشبكة المحلي بنجاح")
+                _uiState.update {
+                    it.copy(statusBannerMessageAr = "تم تشغيل محرك الشبكة المحلي بنجاح")
+                }
             }
+        } catch (e: Exception) {
+            setEngineFailed("تعذر إطلاق خدمة VPN: ${e.localizedMessage ?: "خطأ غير معروف"}")
         }
     }
 
     fun stopVpnEngine() {
-        NetBalancerVpnService.stopService(appContext)
-        viewModelScope.launch {
-            repository.logAuditEvent(
-                AuditLogItem(
-                    eventType = AuditEventType.ENGINE_STOPPED,
-                    summaryAr = "تم إيقاف محرك VPN المحلي"
+        val current = _engineUiState.value
+        if (current == EngineUiState.STOPPED || current == EngineUiState.STOPPING) return
+        _engineUiState.value = EngineUiState.STOPPING
+        try {
+            NetBalancerVpnService.stopService(appContext)
+            viewModelScope.launch {
+                repository.logAuditEvent(
+                    AuditLogItem(
+                        eventType = AuditEventType.ENGINE_STOPPED,
+                        summaryAr = "تم إيقاف محرك VPN المحلي"
+                    )
                 )
-            )
-            _uiState.update {
-                it.copy(statusBannerMessageAr = "تم إيقاف محرك الشبكة؛ تستمر المراقبة المحلية للإحصاءات")
+                _uiState.update {
+                    it.copy(statusBannerMessageAr = "تم إيقاف محرك الشبكة؛ تستمر المراقبة المحلية للإحصاءات")
+                }
             }
+        } catch (e: Exception) {
+            _engineUiState.value = EngineUiState.STOPPED
         }
     }
 

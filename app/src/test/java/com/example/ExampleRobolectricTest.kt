@@ -14,6 +14,7 @@ import com.example.data.database.NetBalancerDatabase
 import com.example.data.database.RuleEntity
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -66,6 +67,33 @@ class ExampleRobolectricTest {
         val domainRule = loaded.first().toDomain()
         assertTrue(domainRule.isBlocking())
         assertEquals(90, domainRule.priority)
+
+        // التحقق من حفظ الحصة واسترجاعها بدقة دون تصفير زمن البداية
+        val originalTime = 1_700_000_000_000L
+        val quotaEntity = com.example.data.database.QuotaEntity(
+            uid = 10888,
+            packageName = "com.example.demo",
+            appName = "تطبيق تجريبي",
+            periodName = com.example.core.model.QuotaPeriod.MONTHLY.name,
+            limitBytes = 5_000_000L,
+            usedBytes = 4_200_000L,
+            warningPercent = 80,
+            actionOnLimitName = com.example.core.model.QuotaLimitAction.THROTTLE_LOW.name,
+            networkConditionName = com.example.core.model.NetworkTypeCondition.ANY.name,
+            periodStartMillis = originalTime,
+            customDurationDays = 30,
+            isEnabled = true,
+            warningTriggered = true,
+            limitTriggered = false
+        )
+        val qId = dao.upsertQuota(quotaEntity)
+        val loadedQuota = dao.getQuotaById(qId)
+        assertTrue(loadedQuota != null)
+        assertEquals(originalTime, loadedQuota!!.periodStartMillis)
+        assertEquals(4_200_000L, loadedQuota.usedBytes)
+        assertTrue(loadedQuota.warningTriggered)
+        assertFalse(loadedQuota.limitTriggered)
+
         db.close()
     }
 
@@ -73,6 +101,8 @@ class ExampleRobolectricTest {
     fun `verify RTL compose dashboard and navigation across tabs`() {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("dashboard_screen").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("toggle_vpn_button").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("self_test_button").assertIsDisplayed()
 
         // التنقل إلى شاشة التطبيقات
         composeTestRule.onNodeWithTag("nav_tab_applications").performClick()

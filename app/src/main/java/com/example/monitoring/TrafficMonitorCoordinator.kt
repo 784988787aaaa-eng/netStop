@@ -143,26 +143,26 @@ class TrafficMonitorCoordinator(
             if (appHistory.size >= 24) appHistory.removeFirst()
             appHistory.addLast(SpeedSamplePoint(nowMillis, effectiveDownBps, effectiveUpBps))
 
-            // فحص الحصة الخاصة بالتطبيق عند وجود استهلاك إضافي
-            val appQuota = quotasByUid[app.uid]?.firstOrNull()
-            if (appQuota != null && appDeltaBytes > 0L) {
-                evaluateQuotaAlerts(appQuota, appDeltaBytes, notificationsEnabled, nowMillis)
+            // فحص جميع الحصص المطابقة للتطبيق عند وجود استهلاك إضافي
+            val appQuotas = quotasByUid[app.uid].orEmpty()
+            for (appQuota in appQuotas) {
+                if (appDeltaBytes > 0L && isQuotaMatchingTransport(appQuota, transport)) {
+                    evaluateQuotaAlerts(appQuota, appDeltaBytes, notificationsEnabled, nowMillis)
+                }
             }
 
             val saved = persistedTotals[app.uid]
-            val todayDown = maxOf(uidRx, (saved?.todayDownloadBytes ?: 0L) + snap.sessionRxBytes)
-            val todayUp = maxOf(uidTx, (saved?.todayUploadBytes ?: 0L) + snap.sessionTxBytes)
+            val isSameDay = saved != null && isSameCalendarDay(saved.lastUpdatedMillis, nowMillis)
+            val baseTodayDown = if (isSameDay) saved!!.todayDownloadBytes else 0L
+            val baseTodayUp = if (isSameDay) saved!!.todayUploadBytes else 0L
+            val baseWifi = if (isSameDay) saved!!.wifiBytes else 0L
+            val baseCell = if (isSameDay) saved!!.cellularBytes else 0L
+
+            val todayDown = baseTodayDown + snap.sessionRxBytes
+            val todayUp = baseTodayUp + snap.sessionTxBytes
             val totalToday = todayDown + todayUp
-            val wifiBytes = if (transport != ActiveNetworkTransport.CELLULAR) {
-                maxOf(totalToday - (saved?.cellularBytes ?: 0L), snap.wifiTotalBytes)
-            } else {
-                saved?.wifiBytes ?: snap.wifiTotalBytes
-            }
-            val cellBytes = if (transport == ActiveNetworkTransport.CELLULAR) {
-                (saved?.cellularBytes ?: 0L) + snap.cellularTotalBytes
-            } else {
-                saved?.cellularBytes ?: 0L
-            }
+            val wifiBytes = baseWifi + snap.wifiTotalBytes
+            val cellBytes = baseCell + snap.cellularTotalBytes
 
             val capability = PermissionAndCapabilityHelper.evaluateAppCapability(
                 uid = app.uid,
@@ -189,14 +189,14 @@ class TrafficMonitorCoordinator(
                 blockedAttemptsCount = uidFlows.count { it.state.name == "BLOCKED" } + (saved?.blockedAttemptsCount ?: 0),
                 capabilityStatus = capability,
                 activeRule = primaryRule,
-                activeQuota = appQuota,
+                activeQuota = appQuotas.firstOrNull(),
                 lastActiveTimestamp = if (effectiveDownBps > 0 || effectiveUpBps > 0) nowMillis else app.lastActiveTimestamp
             )
         }
 
         // فحص الحصة العامة للجهاز (uid == -1)
         val globalQuota = quotasByUid[-1]?.firstOrNull()
-        if (globalQuota != null && totalDeltaBytesAllApps > 0L) {
+        if (globalQuota != null && totalDeltaBytesAllApps > 0L && isQuotaMatchingTransport(globalQuota, transport)) {
             evaluateQuotaAlerts(globalQuota, totalDeltaBytesAllApps, notificationsEnabled, nowMillis)
         }
 
@@ -224,6 +224,22 @@ class TrafficMonitorCoordinator(
         )
     }
 
+    private fun isQuotaMatchingTransport(quota: QuotaRule, transport: ActiveNetworkTransport): Boolean {
+        return when (quota.networkCondition) {
+            com.example.core.model.NetworkTypeCondition.ANY -> true
+            com.example.core.model.NetworkTypeCondition.WIFI_ONLY -> transport == ActiveNetworkTransport.WIFI || transport == ActiveNetworkTransport.ETHERNET
+            com.example.core.model.NetworkTypeCondition.CELLULAR_ONLY -> transport == ActiveNetworkTransport.CELLULAR
+        }
+    }
+
+    private fun isSameCalendarDay(t1: Long, t2: Long): Boolean {
+        if (t1 <= 0L || t2 <= 0L) return false
+        val c1 = java.util.Calendar.getInstance().apply { timeInMillis = t1 }
+        val c2 = java.util.Calendar.getInstance().apply { timeInMillis = t2 }
+        return c1.get(java.util.Calendar.YEAR) == c2.get(java.util.Calendar.YEAR) &&
+            c1.get(java.util.Calendar.DAY_OF_YEAR) == c2.get(java.util.Calendar.DAY_OF_YEAR)
+    }
+
     fun getAppSpeedHistory(uid: Int): List<SpeedSamplePoint> {
         return perAppSpeedHistory[uid]?.toList().orEmpty()
     }
@@ -236,19 +252,7 @@ class TrafficMonitorCoordinator(
     ) {
         val eval = repository.accountingEngine.evaluateAndUpdateQuota(quota, addedBytes, nowMillis)
         if (eval.newlyTriggeredWarning || eval.newlyTriggeredLimit || eval.periodWasReset || addedBytes >= 32 * 1024L) {
-            repository.saveQuota(
-                uid = eval.updatedQuota.uid,
-                packageName = eval.updatedQuota.packageName,
-                appName = eval.updatedQuota.appName,
-                period = eval.updatedQuota.period,
-                limitBytes = eval.updatedQuota.limitBytes,
-                warningPercent = eval.updatedQuota.warningPercent,
-                actionOnLimit = eval.updatedQuota.actionOnLimit,
-                networkCondition = eval.updatedQuota.networkCondition,
-                customDurationDays = eval.updatedQuota.customDurationDays,
-                existingId = eval.updatedQuota.id,
-                currentUsedBytes = eval.updatedQuota.usedBytes
-            )
+            repository.updateQuotaProgress(eval.updatedQuota)
         }
 
         if (eval.newlyTriggeredWarning) {

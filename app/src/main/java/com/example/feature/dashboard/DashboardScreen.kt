@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,11 +32,13 @@ import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -43,6 +46,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.example.core.model.EngineUiState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,6 +79,7 @@ import com.example.ui.theme.NetUploadViolet
 @Composable
 fun DashboardScreen(
     diagnostics: EngineDiagnostics,
+    engineUiState: EngineUiState = EngineUiState.STOPPED,
     totalDownloadBps: Long,
     totalUploadBps: Long,
     todayTotalBytes: Long,
@@ -104,6 +109,7 @@ fun DashboardScreen(
         item {
             EngineHeroCard(
                 diagnostics = diagnostics,
+                engineUiState = engineUiState,
                 activeTransport = activeTransport,
                 onToggleVpnClick = onToggleVpnClick,
                 onRunSelfTestClick = onRunSelfTestClick
@@ -217,11 +223,27 @@ fun DashboardScreen(
 @Composable
 private fun EngineHeroCard(
     diagnostics: EngineDiagnostics,
+    engineUiState: EngineUiState,
     activeTransport: ActiveNetworkTransport,
     onToggleVpnClick: () -> Unit,
     onRunSelfTestClick: () -> Unit
 ) {
-    val statusColor = if (diagnostics.isVpnRunning) NetSuccessEmerald else NetPrimaryBlue
+    val statusColor = when (engineUiState) {
+        EngineUiState.RUNNING -> NetSuccessEmerald
+        EngineUiState.STOPPED -> NetPrimaryBlue
+        EngineUiState.STARTING, EngineUiState.AWAITING_CONSENT -> NetUploadViolet
+        EngineUiState.STOPPING -> NetBlockCoral
+        EngineUiState.FAILED, EngineUiState.REVOKED_OR_LOST -> NetBlockCoral
+    }
+
+    val buttonContainerColor = when (engineUiState) {
+        EngineUiState.RUNNING -> NetBlockCoral
+        EngineUiState.STOPPED -> NetPrimaryBlue
+        EngineUiState.STARTING, EngineUiState.AWAITING_CONSENT -> NetUploadViolet
+        EngineUiState.STOPPING -> NetBlockCoral.copy(alpha = 0.8f)
+        EngineUiState.FAILED, EngineUiState.REVOKED_OR_LOST -> MaterialTheme.colorScheme.error
+    }
+
     val gradient = Brush.linearGradient(
         colors = listOf(
             MaterialTheme.colorScheme.surface,
@@ -240,8 +262,100 @@ private fun EngineHeroCard(
             modifier = Modifier
                 .background(gradient)
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // شريط العنوان والحالة والوصف
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .background(statusColor.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = when (engineUiState) {
+                            EngineUiState.RUNNING -> Icons.Default.VerifiedUser
+                            EngineUiState.FAILED, EngineUiState.REVOKED_OR_LOST -> Icons.Default.Warning
+                            else -> Icons.Default.Shield
+                        },
+                        contentDescription = "حالة محرك VPN",
+                        tint = statusColor,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = engineUiState.titleAr,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = engineUiState.descriptionAr,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // الزر الرئيسي البارز بارتفاع 56dp+ وعرض كامل
+            Button(
+                onClick = onToggleVpnClick,
+                enabled = engineUiState.canToggle,
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = buttonContainerColor,
+                    contentColor = androidx.compose.ui.graphics.Color.White,
+                    disabledContainerColor = buttonContainerColor.copy(alpha = 0.7f),
+                    disabledContentColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.9f)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 56.dp)
+                    .testTag("toggle_vpn_button")
+            ) {
+                if (engineUiState.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = androidx.compose.ui.graphics.Color.White,
+                        strokeWidth = 2.5.dp
+                    )
+                    Spacer(Modifier.width(10.dp))
+                } else {
+                    Icon(
+                        imageVector = when (engineUiState) {
+                            EngineUiState.RUNNING -> Icons.Default.Stop
+                            EngineUiState.FAILED -> Icons.Default.Warning
+                            EngineUiState.REVOKED_OR_LOST -> Icons.Default.Shield
+                            else -> Icons.Default.PlayArrow
+                        },
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
+                Text(
+                    text = when (engineUiState) {
+                        EngineUiState.RUNNING -> "إيقاف محرك التحكم"
+                        EngineUiState.STOPPED -> "تشغيل محرك NetBalancer"
+                        EngineUiState.AWAITING_CONSENT -> "بانتظار موافقة النظام (VPN)..."
+                        EngineUiState.STARTING -> "جاري إطلاق المحرك المحلي..."
+                        EngineUiState.STOPPING -> "جاري إيقاف المحرك بأمان..."
+                        EngineUiState.FAILED -> "إعادة محاولة تشغيل المحرك"
+                        EngineUiState.REVOKED_OR_LOST -> "إعادة طلب موافقة VPN"
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            // سطر مؤشرات التشخيص السريعة
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -249,69 +363,29 @@ private fun EngineHeroCard(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(statusColor.copy(alpha = 0.18f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (diagnostics.isVpnRunning) Icons.Default.VerifiedUser else Icons.Default.Shield,
-                            contentDescription = "حالة محرك VPN",
-                            tint = statusColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    Column {
-                        Text(
-                            text = if (diagnostics.isVpnRunning) {
-                                "محرك التحكم و VPN المحلي: نشط"
-                            } else {
-                                "وضع المراقبة المحلية (VPN متوقف)"
-                            },
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (activeTransport == ActiveNetworkTransport.CELLULAR) Icons.Default.CellTower else Icons.Default.Wifi,
-                                contentDescription = activeTransport.titleAr,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Text(
-                                text = "${activeTransport.titleAr} • MTU ${diagnostics.mtuSize} • IPv4/IPv6",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-
-                Button(
-                    onClick = onToggleVpnClick,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (diagnostics.isVpnRunning) NetBlockCoral else NetPrimaryBlue
-                    ),
-                    modifier = Modifier.testTag("toggle_vpn_button")
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Icon(
-                        imageVector = if (diagnostics.isVpnRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
+                        imageVector = if (activeTransport == ActiveNetworkTransport.CELLULAR) Icons.Default.CellTower else Icons.Default.Wifi,
+                        contentDescription = activeTransport.titleAr,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(15.dp)
                     )
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (diagnostics.isVpnRunning) "إيقاف المحرك" else "تشغيل المحرك")
+                    Text(
+                        text = "${activeTransport.titleAr} • MTU ${diagnostics.mtuSize} • IPv4/IPv6",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
+
+                Text(
+                    text = "${diagnostics.activeFlowsCount} تدفق • ${diagnostics.droppedByPolicyCount} محجوب",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
 
-            // شريط تشخيص المسار (Packet Reader + Flow Tracker + TokenBucket)
+            // شريط فحص المسار الذاتي
             Surface(
                 color = MaterialTheme.colorScheme.background.copy(alpha = 0.65f),
                 shape = RoundedCornerShape(10.dp),

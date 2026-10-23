@@ -259,6 +259,12 @@ class NetBalancerRepository(
         existingId: Long = 0L,
         currentUsedBytes: Long = 0L
     ): Long = withContext(Dispatchers.IO) {
+        val existingEntity = if (existingId > 0L) dao.getQuotaById(existingId) else null
+        val periodStart = existingEntity?.periodStartMillis ?: System.currentTimeMillis()
+        val used = if (existingEntity != null) existingEntity.usedBytes else currentUsedBytes.coerceAtLeast(0L)
+        val warnTriggered = existingEntity?.warningTriggered ?: false
+        val limitTriggered = existingEntity?.limitTriggered ?: false
+
         val quota = QuotaRule(
             id = existingId,
             uid = uid,
@@ -266,13 +272,15 @@ class NetBalancerRepository(
             appName = appName,
             period = period,
             limitBytes = limitBytes.coerceAtLeast(1024L),
-            usedBytes = currentUsedBytes.coerceAtLeast(0L),
+            usedBytes = used,
             warningPercent = warningPercent.coerceIn(50, 99),
             actionOnLimit = actionOnLimit,
             networkCondition = networkCondition,
-            periodStartMillis = System.currentTimeMillis(),
+            periodStartMillis = periodStart,
             customDurationDays = customDurationDays.coerceIn(1, 365),
-            isEnabled = true
+            isEnabled = true,
+            warningTriggered = warnTriggered,
+            limitTriggered = limitTriggered
         )
         val id = dao.upsertQuota(QuotaEntity.fromDomain(quota))
         syncRulesWithEngine()
@@ -286,6 +294,14 @@ class NetBalancerRepository(
             )
         )
         id
+    }
+
+    /**
+     * يحدّث عداد الاستهلاك وحالة التحذير/الحد للحصة دون المساس بزمن بداية الدورة.
+     */
+    suspend fun updateQuotaProgress(quota: QuotaRule) = withContext(Dispatchers.IO) {
+        dao.upsertQuota(QuotaEntity.fromDomain(quota))
+        syncRulesWithEngine()
     }
 
     suspend fun resetQuotaCounter(quota: QuotaRule) = withContext(Dispatchers.IO) {
