@@ -1,0 +1,127 @@
+name: Android Release Build (APK & AAB)
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-release:
+    name: Build Signed NetBalancer APK & AAB
+    # تثبيت بيئة التشغيل المستقرة ubuntu-24.04 لتجنب مشاكل ترقية Ubuntu 26 وتعطل إضافات Node 20 القديمة
+    runs-on: ubuntu-24.04
+
+    env:
+      GRADLE_VERSION: "9.3.1"
+      JAVA_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=1g"
+      GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4g"
+
+    steps:
+      - name: 1. Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 2. Set up JDK 21 (setup-java@v5)
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: 3. Accept Android SDK 36 / 36.1 Licenses Automatically
+        shell: bash
+        run: |
+          set -e
+          SDK_DIR="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          mkdir -p "$SDK_DIR/licenses"
+          printf "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee\n" > "$SDK_DIR/licenses/android-sdk-license"
+          printf "\n84831b9409646a918e30573bab4c9c91346d8abd\n504667f4c0de7af1a06de9f4b1727b84351f2910\n" > "$SDK_DIR/licenses/android-sdk-preview-license"
+          printf "\n601085b94cd77f0b54ff86406957099ebe79c4d6\n" > "$SDK_DIR/licenses/android-googletv-license"
+          printf "\n33b6a2b64607f11b759f320ef9dff4ae5c47d97a\n" > "$SDK_DIR/licenses/google-gdk-license"
+          echo "ANDROID_SDK_ROOT=$SDK_DIR" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK_DIR" >> "$GITHUB_ENV"
+          echo "✅ تم اعتماد تراخيص Android SDK بنجاح في: $SDK_DIR/licenses"
+
+      - name: 4. Install Gradle 9.3.1 Directly (No gradle-wrapper.jar required)
+        shell: bash
+        run: |
+          set -e
+          echo "⬇️ جاري تحميل وتثبيت Gradle ${GRADLE_VERSION} من المصدر الرسمي..."
+          curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip
+          sudo unzip -q /tmp/gradle.zip -d /opt/gradle
+          rm -f /tmp/gradle.zip
+          echo "/opt/gradle/gradle-${GRADLE_VERSION}/bin" >> "$GITHUB_PATH"
+          /opt/gradle/gradle-${GRADLE_VERSION}/bin/gradle --version
+
+      - name: 5. Decode & Verify Signing Keystore from GitHub Secrets
+        shell: bash
+        env:
+          RAW_KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          SECRET_STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          SECRET_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          SECRET_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          set -e
+          if [ -z "$RAW_KEYSTORE_BASE64" ] || [ -z "$SECRET_STORE_PASSWORD" ] || [ -z "$SECRET_KEY_PASSWORD" ]; then
+            echo "❌ خطأ: يرجى التأكد من إضافة الأسرار (KEYSTORE_BASE64, STORE_PASSWORD, KEY_PASSWORD) في إعدادات مستودع GitHub (Settings -> Secrets and variables -> Actions)."
+            exit 1
+          fi
+
+          KEYSTORE_FILE="${GITHUB_WORKSPACE}/my-upload-key.jks"
+          ALIAS_NAME="${SECRET_KEY_ALIAS:-upload}"
+
+          echo "🔐 تنظيف نص KEYSTORE_BASE64 من أي مسافات أو أسطر زائدة ناتجة عن النسخ عبر الهاتف..."
+          CLEAN_B64=$(printf '%s' "$RAW_KEYSTORE_BASE64" | tr -d '[:space:]' | sed 's/[^A-Za-z0-9+/=]//g')
+          printf '%s' "$CLEAN_B64" | base64 --decode > "$KEYSTORE_FILE"
+
+          echo "🔍 التحقق من سلامة ملف .jks عبر keytool قبل بدء البناء..."
+          keytool -list -v -keystore "$KEYSTORE_FILE" -storepass "$SECRET_STORE_PASSWORD" -alias "$ALIAS_NAME" > /dev/null
+          echo "✅ ملف التوقيع صالح وسليم وتم التحقق منه بنجاح."
+
+          if [ ! -f "${GITHUB_WORKSPACE}/debug.keystore" ]; then
+            keytool -genkeypair -v \
+              -keystore "${GITHUB_WORKSPACE}/debug.keystore" \
+              -storetype JKS \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -alias androiddebugkey \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+          echo "KEYSTORE_PATH=$KEYSTORE_FILE" >> "$GITHUB_ENV"
+          echo "STORE_PASSWORD=$SECRET_STORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "KEY_PASSWORD=$SECRET_KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo "KEY_ALIAS=$ALIAS_NAME" >> "$GITHUB_ENV"
+
+      - name: 6. Run Unit Tests
+        shell: bash
+        run: |
+          gradle :app:testDebugUnitTest --tests "com.example.ExampleUnitTest" --no-daemon
+
+      - name: 7. Build Signed Release APK & AAB
+        shell: bash
+        run: |
+          gradle :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace
+
+      - name: 8. Clean Up Temporary Keystore File
+        if: always()
+        shell: bash
+        run: |
+          rm -f "${GITHUB_WORKSPACE}/my-upload-key.jks"
+
+      - name: 9. Upload Signed Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NetBalancer-Release-APK
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      - name: 10. Upload Signed Release AAB (Google Play Bundle)
+        uses: actions/upload-artifact@v4
+        with:
+          name: NetBalancer-Release-AAB
+          path: app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error

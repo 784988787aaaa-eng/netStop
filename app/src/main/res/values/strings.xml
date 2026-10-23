@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">NetBalancer</string>
+    <string name="app_subtitle">نت بالانسر — مدير حركة الإنترنت</string>
+    <string name="vpn_service_description">محرك نت بالانسر المحلي لمراقبة وإدارة حركة الشبكة</string>
+    <string name="notification_channel_name">حالة محرك الشبكة والتنبيهات</string>
+    <string name="notification_channel_desc">إشعارات تشغيل محرك VPN المحلي وتنبيهات حصص البيانات</string>
+    <string name="nav_dashboard">لوحة التحكم</string>
+    <string name="nav_applications">التطبيقات</string>
+    <string name="nav_rules">القواعد</string>
+    <string name="nav_quotas">الحصص</string>
+    <string name="nav_history">السجل</string>
+    <string name="nav_settings">الإعدادات</string>
+</resources>
