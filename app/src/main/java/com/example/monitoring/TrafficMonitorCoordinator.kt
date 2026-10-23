@@ -119,19 +119,9 @@ class TrafficMonitorCoordinator(
                 nowMillis = nowMillis
             )
 
-            // تطبيق السقف الفعلي إذا كان المحرك نشطًا والقاعدة تقيد السرعة أو تحظرها
-            val effectiveDownBps = when {
-                isVpnRunning && effectivePolicy.isBlocked -> 0L
-                isVpnRunning && effectivePolicy.maxDownloadBytesPerSec > 0L ->
-                    snap.downloadBytesPerSec.coerceAtMost(effectivePolicy.maxDownloadBytesPerSec)
-                else -> snap.downloadBytesPerSec
-            }
-            val effectiveUpBps = when {
-                isVpnRunning && effectivePolicy.isBlocked -> 0L
-                isVpnRunning && effectivePolicy.maxUploadBytesPerSec > 0L ->
-                    snap.uploadBytesPerSec.coerceAtMost(effectivePolicy.maxUploadBytesPerSec)
-                else -> snap.uploadBytesPerSec
-            }
+            // السرعة اللحظية الفعلية المقاسة من النواة دون تزييف أو تقييد رقمي صوري
+            val effectiveDownBps = if (isVpnRunning && effectivePolicy.isBlocked) 0L else snap.downloadBytesPerSec
+            val effectiveUpBps = if (isVpnRunning && effectivePolicy.isBlocked) 0L else snap.uploadBytesPerSec
 
             sumAppsDownBps += effectiveDownBps
             sumAppsUpBps += effectiveUpBps

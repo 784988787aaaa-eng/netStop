@@ -88,6 +88,7 @@ class NetBalancerRepository(
         val uidPackageCounts = discoveredMap.values.groupingBy { it.uid }.eachCount()
         val isVpnActive = VpnEngineController.diagnostics.value.isVpnRunning
 
+        val existingTotals = runCatching { dao.getAllUsageTotalsOnce().associateBy { it.uid } }.getOrDefault(emptyMap())
         val profiles = mutableListOf<AppNetworkProfile>()
         val seenUids = HashSet<Int>()
 
@@ -103,7 +104,14 @@ class NetBalancerRepository(
 
             attributionEngine.registerKnownIdentity(uid, appInfo.packageName, label)
 
-            val (kernelRx, kernelTx) = attributionEngine.readKernelUidBytes(uid)
+            val existing = existingTotals[uid]
+            val todayDown = existing?.todayDownloadBytes ?: 0L
+            val todayUp = existing?.todayUploadBytes ?: 0L
+            val weekTotal = existing?.weekTotalBytes ?: (todayDown + todayUp)
+            val monthTotal = existing?.monthTotalBytes ?: (todayDown + todayUp)
+            val wifi = existing?.wifiBytes ?: (todayDown + todayUp)
+            val cell = existing?.cellularBytes ?: 0L
+
             val capability = PermissionAndCapabilityHelper.evaluateAppCapability(
                 uid = uid,
                 isSystemApp = isSystem,
@@ -118,12 +126,12 @@ class NetBalancerRepository(
                     appName = label,
                     isSystemApp = isSystem,
                     sharedUidCount = sharedCount,
-                    todayDownloadBytes = kernelRx,
-                    todayUploadBytes = kernelTx,
-                    weekTotalBytes = kernelRx + kernelTx,
-                    monthTotalBytes = kernelRx + kernelTx,
-                    wifiBytes = kernelRx + kernelTx,
-                    cellularBytes = 0L,
+                    todayDownloadBytes = todayDown,
+                    todayUploadBytes = todayUp,
+                    weekTotalBytes = weekTotal,
+                    monthTotalBytes = monthTotal,
+                    wifiBytes = wifi,
+                    cellularBytes = cell,
                     capabilityStatus = capability
                 )
             )
@@ -132,7 +140,9 @@ class NetBalancerRepository(
         // التأكد من وجود تطبيقنا نفسه وحزم النظام الشبكية الأساسية للشفافية الكاملة
         if (profiles.none { it.uid == Process.myUid() }) {
             val myUid = Process.myUid()
-            val (rx, tx) = attributionEngine.readKernelUidBytes(myUid)
+            val myExisting = existingTotals[myUid]
+            val myDown = myExisting?.todayDownloadBytes ?: 0L
+            val myUp = myExisting?.todayUploadBytes ?: 0L
             profiles.add(
                 0,
                 AppNetworkProfile(
@@ -140,11 +150,11 @@ class NetBalancerRepository(
                     packageName = context.packageName,
                     appName = "NetBalancer (هذا التطبيق)",
                     isSystemApp = false,
-                    todayDownloadBytes = rx,
-                    todayUploadBytes = tx,
-                    weekTotalBytes = rx + tx,
-                    monthTotalBytes = rx + tx,
-                    wifiBytes = rx + tx
+                    todayDownloadBytes = myDown,
+                    todayUploadBytes = myUp,
+                    weekTotalBytes = myExisting?.weekTotalBytes ?: (myDown + myUp),
+                    monthTotalBytes = myExisting?.monthTotalBytes ?: (myDown + myUp),
+                    wifiBytes = myExisting?.wifiBytes ?: (myDown + myUp)
                 )
             )
         }

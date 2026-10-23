@@ -42,37 +42,37 @@ enum class PolicyPreset(
 ) {
     ALLOW(
         titleAr = "سماح كامل",
-        descriptionAr = "اتصال مباشر بأقصى سرعة متاحة للشبكة دون تقييد",
+        descriptionAr = "اتصال مباشر بأقصى سرعة متاحة للشبكة دون قيود",
         defaultDownloadBytesPerSec = 0L,
         defaultUploadBytesPerSec = 0L
     ),
     HIGH(
-        titleAr = "سرعة مرتفعة",
-        descriptionAr = "تنزيل 640 KB/s (5.12 Mbps) • رفع 256 KB/s (2.05 Mbps)",
+        titleAr = "معدل مرتفع (مراقب)",
+        descriptionAr = "معدل استرشادي 640 KB/s تنزيل • 256 KB/s رفع مع مراقبة التجاوز",
         defaultDownloadBytesPerSec = 640L * 1024L,
         defaultUploadBytesPerSec = 256L * 1024L
     ),
     MEDIUM(
-        titleAr = "سرعة متوسطة",
-        descriptionAr = "تنزيل 160 KB/s (1.28 Mbps) • رفع 64 KB/s (512 Kbps)",
+        titleAr = "معدل متوسط (مراقب)",
+        descriptionAr = "معدل استرشادي 160 KB/s تنزيل • 64 KB/s رفع مع مراقبة التجاوز",
         defaultDownloadBytesPerSec = 160L * 1024L,
         defaultUploadBytesPerSec = 64L * 1024L
     ),
     LOW(
-        titleAr = "سرعة منخفضة",
-        descriptionAr = "تنزيل 32 KB/s (256 Kbps) • رفع 16 KB/s (128 Kbps)",
+        titleAr = "معدل منخفض (مراقب)",
+        descriptionAr = "معدل استرشادي 32 KB/s تنزيل • 16 KB/s رفع مع مراقبة التجاوز",
         defaultDownloadBytesPerSec = 32L * 1024L,
         defaultUploadBytesPerSec = 16L * 1024L
     ),
     CUSTOM(
-        titleAr = "إعداد مخصص",
-        descriptionAr = "حدود سرعة تنزيل ورفع مستقلة يحددها المستخدم",
+        titleAr = "معدل مخصص (مراقب)",
+        descriptionAr = "معدل سرعة استرشادي يحدده المستخدم لمراقبة تدفق التطبيق",
         defaultDownloadBytesPerSec = 256L * 1024L,
         defaultUploadBytesPerSec = 128L * 1024L
     ),
     BLOCK(
-        titleAr = "حظر الاتصال",
-        descriptionAr = "منع حركة الشبكة للتطبيق عبر محرك VPN المحلي",
+        titleAr = "حظر الاتصال الفعلي",
+        descriptionAr = "عزل حزم التطبيق وإسقاطها فورًا على مستوى النواة عبر VPN Sink",
         defaultDownloadBytesPerSec = -1L,
         defaultUploadBytesPerSec = -1L
     )
@@ -116,19 +116,19 @@ enum class ControlCapabilityStatus(
     val explanationAr: String
 ) {
     CONTROL_AVAILABLE(
-        badgeAr = "التحكم متاح",
-        explanationAr = "يدعم المراقبة اللحظية وتحديد السرعة والحظر عبر محرك VPN"
+        badgeAr = "حظر ومراقبة",
+        explanationAr = "يدعم المراقبة اللحظية الدقيقة والحظر الفعلي على مستوى النواة عبر نفق VPN المعزول"
     ),
     MONITORING_AVAILABLE(
-        badgeAr = "المراقبة متاحة",
-        explanationAr = "المراقبة متاحة؛ شغّل محرك VPN لتفعيل الحظر أو تقييد السرعة"
+        badgeAr = "مراقبة النواة",
+        explanationAr = "المراقبة اللحظية لبيانات النواة متاحة؛ شغّل محرك VPN لتفعيل الحظر الفعلي والحصص"
     ),
     LIMITED_CONTROL(
-        badgeAr = "التحكم محدود",
-        explanationAr = "تطبيق نظام أساسي أو يشترك في UID؛ يُنصح بعدم حظره لتجنب تأثر خدمات النظام"
+        badgeAr = "تطبيق نظام",
+        explanationAr = "تطبيق نظام أساسي أو يشترك في UID؛ يُنصح بعدم حظره لتفادي تأثر خدمات النظام"
     ),
     REQUIRES_PERMISSION(
-        badgeAr = "يتطلب إذنًا إضافيًا",
+        badgeAr = "يتطلب إذنًا",
         explanationAr = "يتطلب موافقة VPN أو إذن إحصاءات الاستخدام لقراءة بيانات النظام التاريخية"
     ),
     UNSUPPORTED_ON_DEVICE(
@@ -136,7 +136,7 @@ enum class ControlCapabilityStatus(
         explanationAr = "حزمة نظام داخلية (UID < 10000) لا تمر عبر مسار VPN للمستخدم"
     ),
     UNATTRIBUTED_SOURCE(
-        badgeAr = "تعذر تحديد مصدر الاتصال",
+        badgeAr = "مصدر غير محدد",
         explanationAr = "حزم شبكية لم يسمح النظام بإسنادها إلى UID تطبيق محدد"
     )
 }
