@@ -25,8 +25,8 @@ import org.robolectric.annotation.Config
 /**
  * اختبارات Robolectric للتحقق من:
  * 1. موارد التطبيق واسمه الرسمي.
- * 2. حفظ واستعادة القواعد في قاعدة بيانات Room الفعلية.
- * 3. عمل شاشات Jetpack Compose والتنقل العربي (RTL) بين الشاشات الرئيسية.
+ * 2. حفظ واستعادة القواعد والحصص في قاعدة بيانات Room الفعلية.
+ * 3. عمل شاشات Jetpack Compose والتنقل بين التبويبات الخمسة وتبديل اللغة (العربية RTL / الإنجليزية LTR).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -68,7 +68,6 @@ class ExampleRobolectricTest {
         assertTrue(domainRule.isBlocking())
         assertEquals(90, domainRule.priority)
 
-        // التحقق من حفظ الحصة واسترجاعها بدقة دون تصفير زمن البداية
         val originalTime = 1_700_000_000_000L
         val quotaEntity = com.example.data.database.QuotaEntity(
             uid = 10888,
@@ -98,7 +97,7 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `verify RTL compose dashboard and navigation across tabs`() {
+    fun `verify bilingual RTL LTR compose dashboard and navigation across tabs`() {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("dashboard_screen").assertIsDisplayed()
         composeTestRule.onNodeWithTag("toggle_vpn_button").assertIsDisplayed()
@@ -109,23 +108,24 @@ class ExampleRobolectricTest {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("applications_screen").assertIsDisplayed()
 
+        // التنقل إلى شاشة الإحصاءات والسجل ثم التحويل إلى الحصص
+        composeTestRule.onNodeWithTag("nav_tab_history").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("history_screen").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("switch_to_quotas_chip").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("quotas_screen").assertIsDisplayed()
+
         // التنقل إلى شاشة القواعد
         composeTestRule.onNodeWithTag("nav_tab_rules").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("rules_screen").assertIsDisplayed()
 
-        // التنقل إلى شاشة الحصص
-        composeTestRule.onNodeWithTag("nav_tab_quotas").performClick()
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag("quotas_screen").assertIsDisplayed()
-
-        // التنقل إلى شاشة السجل
-        composeTestRule.onNodeWithTag("nav_tab_history").performClick()
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag("history_screen").assertIsDisplayed()
-
-        // التنقل إلى شاشة الإعدادات
+        // التنقل إلى شاشة الإعدادات وتبديل اللغة بين العربية والإنجليزية
         composeTestRule.onNodeWithTag("nav_tab_settings").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("settings_screen").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("top_bar_language_toggle").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("settings_screen").assertIsDisplayed()
     }

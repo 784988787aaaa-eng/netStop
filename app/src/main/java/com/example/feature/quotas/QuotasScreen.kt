@@ -25,6 +25,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +47,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.core.common.UnitConverter
+import com.example.core.i18n.LocalAppLanguage
+import com.example.core.i18n.tr
 import com.example.core.model.AppNetworkProfile
 import com.example.core.model.NetworkTypeCondition
 import com.example.core.model.QuotaLimitAction
@@ -59,7 +62,7 @@ import com.example.ui.theme.NetPrimaryBlue
 import com.example.ui.theme.NetWarningAmber
 
 /**
- * الشاشة الخامسة: إدارة حصص البيانات اليومية والأسبوعية والشهرية والمخصصة (Quotas Screen - القسم الخامس والثامن).
+ * الشاشة الخامسة: إدارة حصص البيانات (Quotas Screen).
  */
 @Composable
 fun QuotasScreen(
@@ -80,8 +83,10 @@ fun QuotasScreen(
     ) -> Unit,
     onResetQuota: (QuotaRule) -> Unit,
     onDeleteQuota: (QuotaRule) -> Unit,
+    onSwitchToHistory: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val lang = LocalAppLanguage.current
     var showTargetPicker by remember { mutableStateOf(false) }
     var targetAppForDialog by remember { mutableStateOf<AppNetworkProfile?>(null) }
     var isGlobalTarget by remember { mutableStateOf(false) }
@@ -99,9 +104,9 @@ fun QuotasScreen(
                     modifier = Modifier.padding(horizontal = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "إضافة حصة")
+                    Icon(Icons.Default.Add, contentDescription = tr(lang, "إضافة حصة", "Add Quota"))
                     Spacer(Modifier.width(6.dp))
-                    Text("إضافة حصة بيانات", style = MaterialTheme.typography.labelLarge)
+                    Text(tr(lang, "إضافة حصة", "Add Quota"), style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
@@ -113,7 +118,28 @@ fun QuotasScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // بطاقة توثيق دقة الحصص وهامش التجاوز المحتمل (Section 5 requirement)
+            if (onSwitchToHistory != null) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = false,
+                            onClick = onSwitchToHistory,
+                            label = { Text(tr(lang, "الاستهلاك والسجل", "Usage & Log")) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = true,
+                            onClick = {},
+                            label = { Text(tr(lang, "حصص البيانات (${quotas.size})", "Data Quotas (${quotas.size})")) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -121,27 +147,25 @@ fun QuotasScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.padding(14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Default.Info,
                             contentDescription = null,
                             tint = NetDownloadTeal,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(20.dp)
                         )
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = "نظام مراقبة الحصص وهامش الحزم العابرة (In-Flight Margin)",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "يرصد المحرك الاستهلاك التراكمي دوريًا كل 500–1000ms. عند بلوغ الحد الأقصى قد يحدث تجاوز تقني طفيف (16KB إلى 64KB) ناتج عن الحزم الموجودة مسبقًا في مخازن النواة قبل تطبيق قرار الحظر أو خفض السرعة.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        Text(
+                            text = tr(
+                                lang,
+                                "تُرصد الحصص كل ثانية مع تنبيه مبكر وإجراء تلقائي (تقييد السرعة أو الحظر) عند بلوغ السقف.",
+                                "Quotas are sampled every second with early warning and automatic throttling or blocking at the cap."
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -160,18 +184,22 @@ fun QuotasScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = "لم يتم إعداد حصص بيانات بعد",
+                                text = tr(lang, "لا توجد حصص بيانات مضافة", "No Data Quotas Set"),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "أنشئ حصة يومية أو أسبوعية أو شهرية للجهاز بالكامل أو لتطبيق محدد مع تنبيه مبكر وإجراء تلقائي عند بلوغ الحد.",
-                                style = MaterialTheme.typography.bodyMedium,
+                                text = tr(
+                                    lang,
+                                    "حدد سقف استهلاك يومي أو أسبوعي أو شهري للجهاز أو لتطبيق معين.",
+                                    "Set a daily, weekly, or monthly data cap for the device or any app."
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(Modifier.height(6.dp))
+                            Spacer(Modifier.height(4.dp))
                             Button(onClick = { showTargetPicker = true }) {
-                                Text("إعداد حصة جديدة")
+                                Text(tr(lang, "إضافة حصة", "Add Quota"))
                             }
                         }
                     }
@@ -196,7 +224,7 @@ fun QuotasScreen(
     if (showTargetPicker) {
         AlertDialog(
             onDismissRequest = { showTargetPicker = false },
-            title = { Text("اختر نطاق الحصة") },
+            title = { Text(tr(lang, "اختر نطاق الحصة", "Select Quota Target")) },
             text = {
                 LazyColumn(
                     modifier = Modifier.height(360.dp),
@@ -217,12 +245,12 @@ fun QuotasScreen(
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
-                                    text = "حصة عامة لجميع تطبيقات الجهاز",
+                                    text = tr(lang, "الجهاز بالكامل", "Entire Device"),
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "مراقبة إجمالي استهلاك الإنترنت الكلي",
+                                    text = tr(lang, "مراقبة إجمالي استهلاك جميع التطبيقات", "Monitor combined usage across all apps"),
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
@@ -251,7 +279,7 @@ fun QuotasScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(app.appName, style = MaterialTheme.typography.titleSmall)
                                     Text(
-                                        text = "استهلاك اليوم: ${UnitConverter.formatVolume(app.totalTodayBytes)}",
+                                        text = "${tr(lang, "اليوم", "Today")}: ${UnitConverter.formatVolume(app.totalTodayBytes)}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -264,7 +292,7 @@ fun QuotasScreen(
             confirmButton = {},
             dismissButton = {
                 OutlinedButton(onClick = { showTargetPicker = false }) {
-                    Text("إلغاء")
+                    Text(tr(lang, "إلغاء", "Cancel"))
                 }
             }
         )
@@ -282,7 +310,7 @@ fun QuotasScreen(
             onSave = { period, limitBytes, warnPct, action, netCond, customDays ->
                 val uid = editingQuota?.uid ?: targetAppForDialog?.uid ?: -1
                 val pkg = editingQuota?.packageName ?: targetAppForDialog?.packageName ?: "global.device.quota"
-                val name = editingQuota?.appName ?: targetAppForDialog?.appName ?: "إجمالي الجهاز الكلي"
+                val name = editingQuota?.appName ?: targetAppForDialog?.appName ?: tr(lang, "الجهاز بالكامل", "Entire Device")
                 val currentUsed = editingQuota?.usedBytes ?: targetAppForDialog?.totalTodayBytes ?: 0L
 
                 onSaveQuota(
@@ -313,6 +341,7 @@ private fun QuotaItemCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val lang = LocalAppLanguage.current
     val barColor = when {
         quota.isLimitReached -> NetBlockCoral
         quota.isWarningReached -> NetWarningAmber
@@ -325,8 +354,8 @@ private fun QuotaItemCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -339,16 +368,16 @@ private fun QuotaItemCard(
                     modifier = Modifier.weight(1f)
                 ) {
                     if (quota.uid >= 0) {
-                        AppPackageIcon(packageName = quota.packageName, appName = quota.appName, size = 38.dp)
+                        AppPackageIcon(packageName = quota.packageName, appName = quota.appName, size = 36.dp)
                     }
                     Column {
                         Text(
                             text = quota.appName,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "${quota.period.titleAr} • ${quota.networkCondition.titleAr}",
+                            text = "${quota.period.title(lang)} • ${quota.networkCondition.title(lang)}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -375,44 +404,32 @@ private fun QuotaItemCard(
                 trackColor = MaterialTheme.colorScheme.surfaceVariant,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(10.dp)
-                    .clip(RoundedCornerShape(5.dp))
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
             )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "المستهلك: ${UnitConverter.formatVolume(quota.usedBytes)}",
+                    text = "${UnitConverter.formatVolume(quota.usedBytes)} / ${UnitConverter.formatVolume(quota.limitBytes)} • ${quota.actionOnLimit.title(lang)}",
                     style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
                 )
-                Text(
-                    text = "الحد الأقصى: ${UnitConverter.formatVolume(quota.limitBytes)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
 
-            Text(
-                text = "تنبيه عند ${quota.warningPercent}% • عند بلوغ الحد: ${quota.actionOnLimit.titleAr}",
-                style = MaterialTheme.typography.bodySmall,
-                color = NetPrimaryBlue
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                IconButton(onClick = onReset) {
-                    Icon(Icons.Default.Refresh, contentDescription = "تصفير الحصة", tint = NetDownloadTeal)
-                }
-                IconButton(onClick = onEdit) {
-                    Icon(Icons.Default.Edit, contentDescription = "تعديل الحصة", tint = MaterialTheme.colorScheme.primary)
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "حذف الحصة", tint = NetBlockCoral)
+                Row {
+                    IconButton(onClick = onReset, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Refresh, contentDescription = tr(lang, "تصفير", "Reset"), tint = NetDownloadTeal, modifier = Modifier.size(18.dp))
+                    }
+                    IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Edit, contentDescription = tr(lang, "تعديل", "Edit"), tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = tr(lang, "حذف", "Delete"), tint = NetBlockCoral, modifier = Modifier.size(18.dp))
+                    }
                 }
             }
         }

@@ -349,6 +349,7 @@ class NetBalancerRepository(
         val affectedUids = (allRules.map { it.uid } + allQuotas.map { it.uid }).filter { it >= 0 }.toSet()
 
         val blockedPackages = mutableSetOf<String>()
+        val rateLimitedPackages = mutableSetOf<String>()
         for (uid in affectedUids) {
             val effective = VpnEngineController.policyEngine.evaluateForUid(
                 uid = uid,
@@ -361,11 +362,13 @@ class NetBalancerRepository(
                 maxDownloadBytesPerSec = effective.maxDownloadBytesPerSec,
                 maxUploadBytesPerSec = effective.maxUploadBytesPerSec
             )
-            if (effective.isBlocked) {
-                val pkg = allRules.firstOrNull { it.uid == uid }?.packageName
-                    ?: allQuotas.firstOrNull { it.uid == uid }?.packageName
-                if (!pkg.isNullOrBlank()) {
+            val pkg = allRules.firstOrNull { it.uid == uid }?.packageName
+                ?: allQuotas.firstOrNull { it.uid == uid }?.packageName
+            if (!pkg.isNullOrBlank()) {
+                if (effective.isBlocked) {
                     blockedPackages.add(pkg)
+                } else if (effective.isThrottled) {
+                    rateLimitedPackages.add(pkg)
                 }
             }
             if (effective.conflictResolvedExplanationAr != null) {
@@ -380,7 +383,7 @@ class NetBalancerRepository(
                 )
             }
         }
-        VpnEngineController.updateBlockedPackages(blockedPackages)
+        VpnEngineController.updateEnforcedPackages(blockedPackages, rateLimitedPackages)
     }
 
     suspend fun saveUsageSnapshots(profiles: List<AppNetworkProfile>) = withContext(Dispatchers.IO) {

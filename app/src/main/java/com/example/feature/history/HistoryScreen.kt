@@ -30,6 +30,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.core.common.UnitConverter
+import com.example.core.i18n.LocalAppLanguage
+import com.example.core.i18n.tr
 import com.example.core.model.AppNetworkProfile
 import com.example.core.model.AuditEventType
 import com.example.core.model.AuditLogItem
@@ -44,7 +46,7 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * الشاشة السادسة: سجل الاستهلاك والأحداث ومحاولات الاتصال المحظورة (History Screen - القسم الثامن).
+ * الشاشة السادسة: الإحصاءات وسجل الأحداث (Stats & Audit Log Screen).
  */
 @Composable
 fun HistoryScreen(
@@ -52,8 +54,11 @@ fun HistoryScreen(
     auditLogs: List<AuditLogItem>,
     selectedFilter: AuditEventType?,
     onSelectFilter: (AuditEventType?) -> Unit,
+    quotasCount: Int = 0,
+    onSwitchToQuotas: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val lang = LocalAppLanguage.current
     val dateFormatter = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US) }
     val topApps = remember(apps) { apps.sortedByDescending { it.totalTodayBytes }.take(5) }
     val maxAppBytes = topApps.firstOrNull()?.totalTodayBytes?.coerceAtLeast(1L) ?: 1L
@@ -69,7 +74,31 @@ fun HistoryScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 1. ملخص أعلى التطبيقات استهلاكًا وتوزيع الشبكة
+        if (onSwitchToQuotas != null) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = true,
+                        onClick = {},
+                        label = { Text(tr(lang, "الاستهلاك والسجل", "Usage & Log")) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    FilterChip(
+                        selected = false,
+                        onClick = onSwitchToQuotas,
+                        label = { Text(tr(lang, "حصص البيانات ($quotasCount)", "Data Quotas ($quotasCount)")) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("switch_to_quotas_chip")
+                    )
+                }
+            }
+        }
+
+        // 1. أعلى التطبيقات استهلاكًا
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -81,7 +110,7 @@ fun HistoryScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "التطبيقات الأعلى استهلاكًا في السجل التراكمي",
+                        text = tr(lang, "الأعلى استهلاكًا", "Top Data Consumers"),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -126,7 +155,7 @@ fun HistoryScreen(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "السجل الزمني للتغييرات والأحداث (${filteredLogs.size})",
+                    text = tr(lang, "سجل الأحداث (${filteredLogs.size})", "Event Log (${filteredLogs.size})"),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -139,13 +168,13 @@ fun HistoryScreen(
                     FilterChip(
                         selected = selectedFilter == null,
                         onClick = { onSelectFilter(null) },
-                        label = { Text("الكل") }
+                        label = { Text(tr(lang, "الكل", "All")) }
                     )
                     AuditEventType.entries.forEach { eventType ->
                         FilterChip(
                             selected = selectedFilter == eventType,
                             onClick = { onSelectFilter(eventType) },
-                            label = { Text(eventType.titleAr) }
+                            label = { Text(eventType.title(lang)) }
                         )
                     }
                 }
@@ -159,10 +188,10 @@ fun HistoryScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "لا توجد أحداث مسجلة تطابق التصفية المختارة حاليًا.",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = tr(lang, "لا توجد أحداث مطابقة.", "No matching events recorded."),
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(18.dp)
+                        modifier = Modifier.padding(16.dp)
                     )
                 }
             }
@@ -179,6 +208,7 @@ private fun AuditEventRowCard(
     log: AuditLogItem,
     formattedDate: String
 ) {
+    val lang = LocalAppLanguage.current
     val badgeColor = when (log.eventType) {
         AuditEventType.CONNECTION_BLOCKED, AuditEventType.QUOTA_EXCEEDED -> NetBlockCoral
         AuditEventType.QUOTA_WARNING, AuditEventType.CONFLICT_RESOLVED, AuditEventType.ERROR_RECOVERY -> NetWarningAmber
@@ -192,8 +222,8 @@ private fun AuditEventRowCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -205,11 +235,11 @@ private fun AuditEventRowCard(
                     shape = RoundedCornerShape(6.dp)
                 ) {
                     Text(
-                        text = log.eventType.titleAr,
+                        text = log.eventType.title(lang),
                         style = MaterialTheme.typography.labelMedium,
                         color = badgeColor,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                     )
                 }
                 Text(
@@ -221,7 +251,7 @@ private fun AuditEventRowCard(
 
             Text(
                 text = log.summaryAr,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface
             )
 
@@ -232,13 +262,6 @@ private fun AuditEventRowCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "التطبيق: ${log.appName} • الشبكة: ${log.networkTransport.titleAr}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }

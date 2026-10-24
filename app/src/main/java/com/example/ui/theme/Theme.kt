@@ -12,6 +12,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.example.core.i18n.AppLanguage
+import com.example.core.i18n.LocalAppLanguage
 
 private val DarkColorScheme = darkColorScheme(
     primary = NetPrimaryBlue,
@@ -75,13 +77,17 @@ val NetBalancerShapes = Shapes(
 @Composable
 fun NetBalancerTheme(
     darkTheme: Boolean = true,
-    forceRtl: Boolean = true,
+    appLanguage: AppLanguage = AppLanguage.AR,
+    forceRtl: Boolean = appLanguage.isRtl,
     content: @Composable () -> Unit
 ) {
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
     val direction = if (forceRtl) LayoutDirection.Rtl else LayoutDirection.Ltr
 
-    CompositionLocalProvider(LocalLayoutDirection provides direction) {
+    CompositionLocalProvider(
+        LocalLayoutDirection provides direction,
+        LocalAppLanguage provides appLanguage
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = Typography,
@@ -97,5 +103,5 @@ fun MyApplicationTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    NetBalancerTheme(darkTheme = darkTheme, forceRtl = true, content = content)
+    NetBalancerTheme(darkTheme = darkTheme, appLanguage = AppLanguage.AR, content = content)
 }

@@ -45,21 +45,27 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.core.common.UnitConverter
+import com.example.core.i18n.LocalAppLanguage
+import com.example.core.i18n.tr
+import com.example.core.model.ActiveNetworkTransport
 import com.example.core.model.AppNetworkProfile
 import com.example.core.model.BandwidthUnit
 import com.example.core.model.NetworkTypeCondition
 import com.example.core.model.PolicyPreset
 import com.example.core.model.RuleDurationMode
+import com.example.core.model.RuleEnforcementState
 import com.example.core.model.TrafficRule
 import com.example.feature.common.AppPackageIcon
+import com.example.feature.common.EngineInactiveWarningBanner
 import com.example.feature.common.PolicyBadgeChip
 import com.example.feature.common.RuleEditorDialog
 import com.example.ui.theme.NetBlockCoral
 import com.example.ui.theme.NetPrimaryBlue
+import com.example.ui.theme.NetSuccessEmerald
 import com.example.ui.theme.NetWarningAmber
 
 /**
- * الشاشة الرابعة: قواعد التحكم والأولويات وحسم التعارض (Rules Screen - القسم الخامس والثامن).
+ * الشاشة الرابعة: قواعد التحكم والأولويات وحسم التعارض (Rules Screen).
  */
 @Composable
 fun RulesScreen(
@@ -79,13 +85,17 @@ fun RulesScreen(
     ) -> Unit,
     onToggleRule: (TrafficRule, Boolean) -> Unit,
     onDeleteRule: (TrafficRule) -> Unit,
+    isVpnRunning: Boolean = false,
+    activeTransport: ActiveNetworkTransport = ActiveNetworkTransport.WIFI,
+    failedRulePackages: Set<String> = emptySet(),
+    onStartEngineClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val lang = LocalAppLanguage.current
     var showAppPickerForNewRule by remember { mutableStateOf(false) }
     var selectedAppForRule by remember { mutableStateOf<AppNetworkProfile?>(null) }
     var editingRule by remember { mutableStateOf<TrafficRule?>(null) }
 
-    // اكتشاف التطبيقات التي لديها أكثر من قاعدة مفعلة لشرح آلية حسم التعارض
     val conflictsByUid = remember(rules) {
         rules.filter { it.isEnabled }.groupBy { it.uid }.filterValues { it.size > 1 }
     }
@@ -102,9 +112,9 @@ fun RulesScreen(
                     modifier = Modifier.padding(horizontal = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "إضافة قاعدة")
+                    Icon(Icons.Default.Add, contentDescription = tr(lang, "إضافة قاعدة", "Add Rule"))
                     Spacer(Modifier.width(6.dp))
-                    Text("إضافة قاعدة", style = MaterialTheme.typography.labelLarge)
+                    Text(tr(lang, "إضافة قاعدة", "Add Rule"), style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
@@ -114,9 +124,19 @@ fun RulesScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // بطاقة شرح نظام الأولويات وحسم التعارض
+            if (!isVpnRunning) {
+                item {
+                    EngineInactiveWarningBanner(
+                        isVpnRunning = false,
+                        enabledRulesCount = rules.count { it.isEnabled },
+                        onStartEngineClick = onStartEngineClick
+                    )
+                }
+            }
+
+            // بطاقة مختصرة لشرح التمييز بين القاعدة المحفوظة والقاعدة النافذة
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -124,28 +144,25 @@ fun RulesScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier.padding(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.Top
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Default.Info,
                             contentDescription = null,
                             tint = NetPrimaryBlue,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(20.dp)
                         )
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = "محرك الأولويات ومعالجة تعارض القواعد",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "عند وجود أكثر من قاعدة لنفس التطبيق، يطبق المحرك القاعدة الأعلى أولوية (100 إلى 1)، ثم الأكثر تخصيصًا لنوع الشبكة (Wi-Fi أو بيانات الهاتف قبل جميع الشبكات)، ثم الأكثر تقييدًا.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        Text(
+                            text = tr(
+                                lang,
+                                "تُرتب القواعد حسب الأولوية (100–1) ونوع الشبكة. القواعد المحفوظة تصبح نافذة فور تشغيل المحرك.",
+                                "Rules are prioritized (100–1) by network scope. Saved rules take effect when the engine is active."
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -164,7 +181,11 @@ fun RulesScreen(
                         ) {
                             Icon(Icons.Default.Warning, contentDescription = null, tint = NetWarningAmber)
                             Text(
-                                text = "يوجد ${conflictsByUid.size} تطبيق لديه قواعد متعددة؛ تم حسم التعارض تلقائيًا لصالح القاعدة ذات الأولوية الأعلى.",
+                                text = tr(
+                                    lang,
+                                    "${conflictsByUid.size} تطبيق لديه قواعد متعددة؛ تُطبق القاعدة الأعلى أولوية تلقائياً.",
+                                    "${conflictsByUid.size} app(s) have multiple rules; highest priority rule wins."
+                                ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = NetWarningAmber
                             )
@@ -187,18 +208,22 @@ fun RulesScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = "لا توجد قواعد تحكم مخصصة بعد",
+                                text = tr(lang, "لا توجد قواعد مخصصة بعد", "No Custom Rules Yet"),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "اضغط على زر «إضافة قاعدة» لتحديد سرعة التنزيل والرفع أو حظر اتصال تطبيق معين على شبكة Wi-Fi أو بيانات الهاتف.",
-                                style = MaterialTheme.typography.bodyMedium,
+                                text = tr(
+                                    lang,
+                                    "أنشئ قاعدة لتحديد السرعة أو حظر تطبيق على Wi-Fi أو بيانات الهاتف.",
+                                    "Create a rule to limit speed or block an app on Wi-Fi or Cellular."
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(Modifier.height(6.dp))
+                            Spacer(Modifier.height(4.dp))
                             Button(onClick = { showAppPickerForNewRule = true }) {
-                                Text("إنشاء أول قاعدة تحكم")
+                                Text(tr(lang, "إضافة قاعدة", "Create Rule"))
                             }
                         }
                     }
@@ -207,8 +232,14 @@ fun RulesScreen(
                 items(rules, key = { it.id }) { rule ->
                     val hasConflict = conflictsByUid.containsKey(rule.uid)
                     val isWinningInConflict = conflictsByUid[rule.uid]?.maxByOrNull { it.priority }?.id == rule.id
+                    val enforcementState = rule.evaluateEnforcementState(
+                        isVpnRunning = isVpnRunning,
+                        activeTransport = activeTransport,
+                        hasApplyError = failedRulePackages.contains(rule.packageName)
+                    )
                     RuleCardItem(
                         rule = rule,
+                        enforcementState = enforcementState,
                         bandwidthUnit = bandwidthUnit,
                         hasConflict = hasConflict,
                         isWinningInConflict = isWinningInConflict,
@@ -233,7 +264,7 @@ fun RulesScreen(
     if (showAppPickerForNewRule) {
         AlertDialog(
             onDismissRequest = { showAppPickerForNewRule = false },
-            title = { Text("اختر التطبيق لإضافة قاعدة تحكم") },
+            title = { Text(tr(lang, "اختر تطبيقاً", "Select Application")) },
             text = {
                 LazyColumn(
                     modifier = Modifier.height(340.dp),
@@ -273,7 +304,7 @@ fun RulesScreen(
             confirmButton = {},
             dismissButton = {
                 OutlinedButton(onClick = { showAppPickerForNewRule = false }) {
-                    Text("إغلاق")
+                    Text(tr(lang, "إغلاق", "Close"))
                 }
             }
         )
@@ -309,6 +340,7 @@ fun RulesScreen(
 @Composable
 private fun RuleCardItem(
     rule: TrafficRule,
+    enforcementState: RuleEnforcementState,
     bandwidthUnit: BandwidthUnit,
     hasConflict: Boolean,
     isWinningInConflict: Boolean,
@@ -316,6 +348,17 @@ private fun RuleCardItem(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val lang = LocalAppLanguage.current
+    val enforcementColor = when (enforcementState) {
+        RuleEnforcementState.ENFORCED_IN_KERNEL_VPN,
+        RuleEnforcementState.ACTIVE_MONITORED_RATE -> NetSuccessEmerald
+        RuleEnforcementState.SAVED_ONLY_VPN_OFF,
+        RuleEnforcementState.INACTIVE_NETWORK_MISMATCH -> NetWarningAmber
+        RuleEnforcementState.FAILED_TO_APPLY -> NetBlockCoral
+        RuleEnforcementState.DISABLED_BY_USER,
+        RuleEnforcementState.EXPIRED_TIME_LIMIT -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = MaterialTheme.shapes.medium,
@@ -330,73 +373,107 @@ private fun RuleCardItem(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                AppPackageIcon(packageName = rule.packageName, appName = rule.appName, size = 40.dp)
+                AppPackageIcon(packageName = rule.packageName, appName = rule.appName, size = 38.dp)
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = rule.appName,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "الأولوية: ${rule.priority}/100 • ${rule.networkCondition.titleAr}",
+                        text = "${tr(lang, "أولوية", "Priority")} ${rule.priority} • ${rule.networkCondition.title(lang)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                PolicyBadgeChip(preset = rule.preset)
+                PolicyBadgeChip(preset = rule.preset, compact = true)
                 Switch(
                     checked = rule.isEnabled,
                     onCheckedChange = onToggle
                 )
             }
 
+            Surface(
+                color = enforcementColor.copy(alpha = 0.14f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (rule.isEnabled) {
+                            tr(lang, "الحالة: مفعلة", "Saved: Enabled")
+                        } else {
+                            tr(lang, "الحالة: معطلة", "Saved: Disabled")
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = enforcementState.badge(lang),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = enforcementColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
             val downText = when {
-                rule.maxDownloadBytesPerSec < 0 -> "محظور"
-                rule.maxDownloadBytesPerSec == 0L -> "غير محدود"
+                rule.maxDownloadBytesPerSec < 0 -> tr(lang, "حظر", "Blocked")
+                rule.maxDownloadBytesPerSec == 0L -> tr(lang, "غير محدود", "Unlimited")
                 else -> UnitConverter.formatSpeed(rule.maxDownloadBytesPerSec, bandwidthUnit)
             }
             val upText = when {
-                rule.maxUploadBytesPerSec < 0 -> "محظور"
-                rule.maxUploadBytesPerSec == 0L -> "غير محدود"
+                rule.maxUploadBytesPerSec < 0 -> tr(lang, "حظر", "Blocked")
+                rule.maxUploadBytesPerSec == 0L -> tr(lang, "غير محدود", "Unlimited")
                 else -> UnitConverter.formatSpeed(rule.maxUploadBytesPerSec, bandwidthUnit)
-            }
-
-            Text(
-                text = "سقف التنزيل: $downText • سقف الرفع: $upText • المدة: ${rule.durationMode.titleAr}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            if (hasConflict) {
-                Text(
-                    text = if (isWinningInConflict) {
-                        "حالة التعارض: هذه القاعدة هي المطبقة فعليًا لأنها الأعلى أولوية."
-                    } else {
-                        "حالة التعارض: قاعدة احتياطية (توجد قاعدة أخرى لنفس التطبيق بأولوية أعلى)."
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isWinningInConflict) NetPrimaryBlue else NetWarningAmber
-                )
-            }
-
-            if (rule.notes.isNotBlank()) {
-                Text(
-                    text = "ملاحظة: ${rule.notes}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onEdit) {
-                    Icon(Icons.Default.Edit, contentDescription = "تعديل القاعدة", tint = MaterialTheme.colorScheme.primary)
+                Text(
+                    text = "↓ $downText • ↑ $upText • ${rule.durationMode.title(lang)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Row {
+                    IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = tr(lang, "تعديل", "Edit"),
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = tr(lang, "حذف", "Delete"),
+                            tint = NetBlockCoral,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "حذف القاعدة", tint = NetBlockCoral)
-                }
+            }
+
+            if (hasConflict) {
+                Text(
+                    text = if (isWinningInConflict) {
+                        tr(lang, "القاعدة المطبقة (الأعلى أولوية)", "Active rule (highest priority)")
+                    } else {
+                        tr(lang, "احتياطية (توجد قاعدة أعلى أولوية)", "Standby (overridden by higher priority rule)")
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isWinningInConflict) NetPrimaryBlue else NetWarningAmber
+                )
             }
         }
     }

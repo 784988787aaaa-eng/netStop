@@ -1,0 +1,54 @@
+<resources>
+    <string name="app_name">NetBalancer</string>
+    <string name="app_subtitle">مراقبة الشبكة والتحكم في سرعة التطبيقات</string>
+    <string name="notification_channel_name">محرك شبكة NetBalancer</string>
+    <string name="notification_channel_desc">حالة محرك VPN المحلي ومراقبة حركة البيانات</string>
+
+    <!-- Navigation -->
+    <string name="nav_dashboard">الرئيسية</string>
+    <string name="nav_applications">التطبيقات</string>
+    <string name="nav_stats">الإحصاءات</string>
+    <string name="nav_quotas">الحصص</string>
+    <string name="nav_rules">القواعد</string>
+    <string name="nav_settings">الإعدادات</string>
+    <string name="nav_app_details">تفاصيل التطبيق</string>
+
+    <!-- Engine States & Actions -->
+    <string name="engine_stopped_title">المحرك متوقف</string>
+    <string name="engine_stopped_desc">المراقبة نشطة للإحصاءات فقط. شغّل المحرك لتطبيق القواعد وتحديد السرعة.</string>
+    <string name="engine_awaiting_consent_title">يلزم منح إذن VPN</string>
+    <string name="engine_awaiting_consent_desc">اقبل نافذة نظام أندرويد لتفعيل التحكم المحلي بالحركة.</string>
+    <string name="engine_starting_title">جاري تشغيل المحرك…</string>
+    <string name="engine_starting_desc">تهيئة واجهة النفق المحلي ومسار القواعد.</string>
+    <string name="engine_running_title">المحرك يعمل</string>
+    <string name="engine_running_desc">نفق VPN المحلي نشط. يتم تطبيق الحظر والحصص وسقف السرعة.</string>
+    <string name="engine_stopping_title">جاري إيقاف المحرك…</string>
+    <string name="engine_stopping_desc">تحرير واجهة النفق والعودة إلى المراقبة الخفيفة.</string>
+    <string name="engine_failed_title">تعذّر تشغيل المحرك</string>
+    <string name="engine_failed_desc">تعذّر تأسيس واجهة VPN المحلية. تحقق من الإذن وحاول مجدداً.</string>
+    <string name="engine_revoked_title">سُحب إذن VPN</string>
+    <string name="engine_revoked_desc">تم إيقاف صلاحية VPN من النظام أو بواسطة تطبيق VPN آخر.</string>
+
+    <string name="action_start_engine">تشغيل المحرك</string>
+    <string name="action_stop_engine">إيقاف المحرك</string>
+    <string name="action_retry_engine">إعادة المحاولة</string>
+    <string name="action_grant_vpn">منح إذن VPN</string>
+    <string name="action_self_test">فحص المسار</string>
+
+    <!-- Pre-VPN Consent Dialog -->
+    <string name="vpn_consent_dialog_title">التحكم المحلي عبر VPN</string>
+    <string name="vpn_consent_dialog_body">يستخدم NetBalancer خدمة VPN المحلية في أندرويد لتصفية اتصالات التطبيقات وتحديد سرعتها داخل جهازك مباشرة.\n\n• معالجة محلية 100% داخل الجهاز.\n• لا توجد خوادم خارجية.\n• لا يتم فحص محتوى الرسائل أو رفعه لأي جهة.</string>
+    <string name="vpn_consent_continue">متابعة</string>
+    <string name="action_cancel">إلغاء</string>
+
+    <!-- Common Labels -->
+    <string name="label_download">التنزيل</string>
+    <string name="label_upload">الرفع</string>
+    <string name="label_today_usage">استهلاك اليوم</string>
+    <string name="label_wifi">Wi-Fi</string>
+    <string name="label_cellular">بيانات الهاتف</string>
+    <string name="label_unavailable">بيانات الاستهلاك غير متاحة</string>
+    <string name="label_no_rules">لا توجد قواعد مخصصة بعد</string>
+    <string name="label_no_quotas">لا توجد حصص بيانات مضافة</string>
+    <string name="label_no_events">لا توجد أحداث مسجلة بعد</string>
+</resources>

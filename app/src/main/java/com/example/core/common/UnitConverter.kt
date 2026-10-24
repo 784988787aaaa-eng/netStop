@@ -40,6 +40,26 @@ object UnitConverter {
     }
 
     /**
+     * تنسيق السرعة بالوحدة الثنائية (KiB/s = 1,024 B/s) بدقة رقمين عشريين عند الحاجة.
+     * مثال: 10,000 B/s -> "9.77 KiB/s" | 10,240 B/s -> "10.00 KiB/s"
+     */
+    fun formatBinaryKiBPerSec(bytesPerSec: Long, decimals: Int = 2): String {
+        if (bytesPerSec < 0L) return "Blocked"
+        val kib = bytesPerSec.toDouble() / 1024.0
+        return String.format(Locale.US, "%.${decimals}f KiB/s", kib)
+    }
+
+    /**
+     * تنسيق السرعة بالوحدة العشرية (KB/s = 1,000 B/s).
+     * مثال: 10,000 B/s -> "10.0 KB/s"
+     */
+    fun formatDecimalKBPerSec(bytesPerSec: Long, decimals: Int = 1): String {
+        if (bytesPerSec < 0L) return "Blocked"
+        val kb = bytesPerSec.toDouble() / 1000.0
+        return String.format(Locale.US, "%.${decimals}f KB/s", kb)
+    }
+
+    /**
      * تنسيق السرعة اللحظية للعرض بالوحدة المفضلة للمستخدم أو تلقائيًا مع الحفاظ على اتجاه الأرقام في RTL.
      */
     fun formatSpeed(
@@ -47,13 +67,18 @@ object UnitConverter {
         preferredUnit: BandwidthUnit = BandwidthUnit.KB_PER_SEC,
         useArabicSymbols: Boolean = true
     ): String {
-        if (bytesPerSec < 0L) return "محظور"
+        if (bytesPerSec < 0L) return if (useArabicSymbols) "محظور" else "Blocked"
         if (bytesPerSec == 0L) {
             val zeroUnit = if (useArabicSymbols) preferredUnit.symbolAr else preferredUnit.symbolEn
             return "0 $zeroUnit"
         }
 
-        // إذا اختار المستخدم البت (Kbps/Mbps) نعرض بالبت مع الترقية التلقائية إلى Mbps عند تجاوز 1000 Kbps
+        if (preferredUnit == BandwidthUnit.DECIMAL_KB_PER_SEC) {
+            val kbs = bytesPerSec.toDouble() / 1000.0
+            val unitLabel = if (useArabicSymbols) BandwidthUnit.DECIMAL_KB_PER_SEC.symbolAr else BandwidthUnit.DECIMAL_KB_PER_SEC.symbolEn
+            return String.format(Locale.US, "%.1f %s", kbs, unitLabel)
+        }
+
         if (preferredUnit.isBits) {
             val bitsPerSec = bytesPerSec * 8.0
             return if (bitsPerSec >= 1_000_000.0 || preferredUnit == BandwidthUnit.MBPS && bitsPerSec >= 100_000.0) {
@@ -66,7 +91,6 @@ object UnitConverter {
                 String.format(Locale.US, "%.1f %s", kbps, unitLabel)
             }
         } else {
-            // عرض بالبايت (KB/s أو MB/s)
             return if (bytesPerSec >= 1024L * 1024L || (preferredUnit == BandwidthUnit.MB_PER_SEC && bytesPerSec >= 100L * 1024L)) {
                 val mbs = bytesPerSec.toDouble() / (1024.0 * 1024.0)
                 val unitLabel = if (useArabicSymbols) BandwidthUnit.MB_PER_SEC.symbolAr else BandwidthUnit.MB_PER_SEC.symbolEn
@@ -80,11 +104,14 @@ object UnitConverter {
     }
 
     /**
-     * تنسيق حجم البيانات التراكمي (KB / MB / GB) بدقة.
+     * تنسيق حجم البيانات التراكمي (KiB / MiB / GiB) بدقة، مع رفض القيم السالبة (البيانات غير المتاحة).
      */
     fun formatVolume(bytes: Long, useArabicSymbols: Boolean = true): String {
-        if (bytes <= 0L) {
-            return if (useArabicSymbols) "0 كيلوبايت" else "0 KB"
+        if (bytes < 0L) {
+            return if (useArabicSymbols) "البيانات غير متاحة" else "Traffic unavailable"
+        }
+        if (bytes == 0L) {
+            return if (useArabicSymbols) "0 كيلوبايت" else "0 KiB"
         }
         val gb = 1024.0 * 1024.0 * 1024.0
         val mb = 1024.0 * 1024.0

@@ -1,6 +1,7 @@
 package com.example
 
 import com.example.core.common.UnitConverter
+import com.example.core.i18n.AppLanguage
 import com.example.core.model.ActiveNetworkTransport
 import com.example.core.model.BandwidthUnit
 import com.example.core.model.FlowState
@@ -29,14 +30,6 @@ import org.junit.Test
 
 /**
  * اختبارات الوحدات الشاملة لمحرك NetBalancer (القسم الحادي عشر).
- * تغطي:
- * 1. تحويل الوحدات والفصل الصارم بين البت (bits) والبايت (Bytes).
- * 2. تحليل رؤوس حزم IPv4 و IPv6 و TCP و UDP و DNS وفحص MTU.
- * 3. إدارة التدفقات بذاكرة محدودة (FlowTracker Bounded Eviction).
- * 4. خوارزمية Token Bucket لتحديد السرعة ومعالجة ازدحام طابور الانتظار (Queue Overflow).
- * 5. ترتيب أولويات القواعد وحسم التعارض وتبديل الشبكات (Wi-Fi مقابل الهاتف) والحظر.
- * 6. حساب سرعات النقل والحصص اليومية والشهرية وإعادة التعيين.
- * 7. إسناد التدفقات إلى التطبيقات والتعامل الآمن مع المصادر غير المحددة.
  */
 class ExampleUnitTest {
 
@@ -152,14 +145,11 @@ class ExampleUnitTest {
         val uid = 10250
         val startNanos = 1_000_000_000L
 
-        // تحديد سرعة التنزيل بـ 10 KB/s = 10,240 Bytes/s (Burst = 5,120 Bytes)
         limiter.configureUidLimits(uid, maxDownloadBytesPerSec = 10_240L, maxUploadBytesPerSec = 5_120L, nowNanos = startNanos)
 
-        // الحزمة الأولى (4000 بايت) تمر فورًا من رصيد Burst
         val first = limiter.acquirePacket(uid, packetSizeBytes = 4000, isDownload = true, nowNanos = startNanos)
         assertTrue(first is RateLimitDecision.PassImmediately)
 
-        // الحزم التالية تستهلك الرصيد المتبقي وتدخل طابور التأخير (بحد أقصى 3 في الطابور)
         val d1 = limiter.acquirePacket(uid, packetSizeBytes = 3000, isDownload = true, nowNanos = startNanos)
         val d2 = limiter.acquirePacket(uid, packetSizeBytes = 3000, isDownload = true, nowNanos = startNanos)
         val d3 = limiter.acquirePacket(uid, packetSizeBytes = 3000, isDownload = true, nowNanos = startNanos)
@@ -168,7 +158,6 @@ class ExampleUnitTest {
         assertTrue(d3 is RateLimitDecision.DelayPacket)
         assertEquals(3, limiter.getQueueDepth())
 
-        // الحزمة الرابعة при امتلاء الطابور تُسقط بـ DropQueueOverflow لمنع استنزاف الذاكرة
         val overflow = limiter.acquirePacket(uid, packetSizeBytes = 3000, isDownload = true, nowNanos = startNanos)
         assertTrue(overflow is RateLimitDecision.DropQueueOverflow)
     }
@@ -204,7 +193,6 @@ class ExampleUnitTest {
 
         val rules = listOf(lowPriorityAllow, highPriorityCellularThrottle)
 
-        // على شبكة Wi-Fi: القاعدة المخصصة للهاتف لا تنطبق، فتفوز قاعدة الأولوية 40
         val onWifi = engine.evaluateForUid(
             uid = uid,
             rules = rules,
@@ -214,7 +202,6 @@ class ExampleUnitTest {
         assertEquals(PolicyPreset.HIGH, onWifi.preset)
         assertEquals(500_000L, onWifi.maxDownloadBytesPerSec)
 
-        // عند التبديل إلى بيانات الهاتف: تنطبق القاعدتان، ويحسم المحرك التعارض لصالح الأولوية 85
         val onCellular = engine.evaluateForUid(
             uid = uid,
             rules = rules,
@@ -231,17 +218,14 @@ class ExampleUnitTest {
         val accounting = TrafficAccountingEngine()
         val uid = 10400
 
-        // القراءة المرجعية الأولى
         val s0 = accounting.recordSample(uid, 100_000L, 50_000L, ActiveNetworkTransport.WIFI, nowMillis = 1_000L)
         assertEquals(0L, s0.downloadBytesPerSec)
 
-        // بعد 1000ms زاد التنزيل بمقدار 204,800 بايت (200 KB/s) والرفع بمقدار 51,200 بايت (50 KB/s)
         val s1 = accounting.recordSample(uid, 304_800L, 101_200L, ActiveNetworkTransport.WIFI, nowMillis = 2_000L)
         assertTrue(s1.downloadBytesPerSec > 100_000L)
         assertTrue(s1.uploadBytesPerSec > 25_000L)
         assertEquals(256_000L, s1.wifiTotalBytes)
 
-        // اختبار الحصة اليومية: حد 1000 بايت، تحذير عند 80%
         val quota = QuotaRule(
             id = 10L,
             uid = uid,
@@ -255,17 +239,14 @@ class ExampleUnitTest {
             periodStartMillis = 10_000L
         )
 
-        // إضافة 100 بايت -> يصبح 850 (85%) -> يطلق تحذير الاقتراب من الحد
         val warnEval = accounting.evaluateAndUpdateQuota(quota, addedBytes = 100L, nowMillis = 20_000L)
         assertTrue(warnEval.newlyTriggeredWarning)
         assertFalse(warnEval.newlyTriggeredLimit)
 
-        // إضافة 200 بايت أخرى -> يصبح 1050 (105%) -> يطلق تجاوز الحد الأقصى
         val limitEval = accounting.evaluateAndUpdateQuota(warnEval.updatedQuota, addedBytes = 200L, nowMillis = 30_000L)
         assertTrue(limitEval.newlyTriggeredLimit)
         assertTrue(limitEval.updatedQuota.isLimitReached)
 
-        // بعد مرور أكثر من 24 ساعة -> يعيد تعيين الحصة تلقائيًا لفترة اليوم الجديد
         val nextDayMillis = 10_000L + 25L * 3_600_000L
         val resetEval = accounting.evaluateAndUpdateQuota(limitEval.updatedQuota, addedBytes = 50L, nowMillis = nextDayMillis)
         assertTrue(resetEval.periodWasReset)
@@ -280,7 +261,6 @@ class ExampleUnitTest {
         assertFalse(unattr.isAttributed)
         assertEquals(AppAttributionEngine.UID_UNATTRIBUTED, unattr.uid)
 
-        // تسجيل هوية معروفة واسترجاعها
         attribution.registerKnownIdentity(10555, "org.browser.app", "متصفح الويب")
         val resolved = attribution.resolveUidIdentity(10555)
         assertTrue(resolved.isAttributed)
@@ -290,7 +270,6 @@ class ExampleUnitTest {
 
     @Test
     fun `8 engine UI states declare accurate toggling and loading flags`() {
-        // فحص صحة حالات دورة حياة المحرك السبعة
         val stopped = com.example.core.model.EngineUiState.STOPPED
         assertTrue(stopped.canToggle)
         assertFalse(stopped.isLoading)
@@ -339,7 +318,6 @@ class ExampleUnitTest {
             limitTriggered = false
         )
 
-        // خطوة 1: استهلاك 200,000 بايت يدخل في نطاق التحذير (81%)
         val step1 = accounting.evaluateAndUpdateQuota(quota, addedBytes = 200_000L, nowMillis = originalStartTime + 10_000L)
         assertFalse(step1.periodWasReset)
         assertTrue(step1.newlyTriggeredWarning)
@@ -348,7 +326,6 @@ class ExampleUnitTest {
         assertTrue(step1.updatedQuota.warningTriggered)
         assertFalse(step1.updatedQuota.limitTriggered)
 
-        // خطوة 2: استهلاك إضافي بعد تفعيل التحذير يجب ألا يعيد إطلاق التحذير وألا يصفر وقت البداية
         val step2 = accounting.evaluateAndUpdateQuota(step1.updatedQuota, addedBytes = 50_000L, nowMillis = originalStartTime + 20_000L)
         assertFalse(step2.newlyTriggeredWarning)
         assertEquals(originalStartTime, step2.updatedQuota.periodStartMillis)
@@ -360,12 +337,410 @@ class ExampleUnitTest {
         val vpnIp = "10.215.173.1"
         val remoteIp = "93.184.216.34"
 
-        // حزمة واردة من الخادم إلى عنوان VPN الافتراضي
         val isDownloadInbound = vpnIp == "10.215.173.1"
         assertTrue(isDownloadInbound)
 
-        // حزمة صادرة من عنوان محلي إلى خادم خارجي
         val isDownloadOutbound = remoteIp == "10.215.173.1"
         assertFalse(isDownloadOutbound)
+    }
+
+    @Test
+    fun `11 accounting engine handles kernel counter reset without losing accumulated session usage`() {
+        val accounting = TrafficAccountingEngine()
+        val uid = 10777
+
+        accounting.recordSample(uid, 100_000L, 40_000L, ActiveNetworkTransport.WIFI, nowMillis = 1_000L)
+
+        val beforeReset = accounting.recordSample(uid, 150_000L, 60_000L, ActiveNetworkTransport.WIFI, nowMillis = 2_000L)
+        assertFalse(beforeReset.counterResetDetected)
+        assertEquals(50_000L, beforeReset.sessionRxBytes)
+        assertEquals(20_000L, beforeReset.sessionTxBytes)
+
+        val afterReset = accounting.recordSample(uid, 10_000L, 5_000L, ActiveNetworkTransport.WIFI, nowMillis = 3_000L)
+        assertTrue(afterReset.counterResetDetected)
+        assertEquals(60_000L, afterReset.sessionRxBytes)
+        assertEquals(25_000L, afterReset.sessionTxBytes)
+    }
+
+    @Test
+    fun `12 rule enforcement state separates saved rules from engine enforced rules`() {
+        val blockRuleWifi = TrafficRule(
+            id = 5L,
+            uid = 10900,
+            packageName = "com.social.media",
+            appName = "Social Media",
+            preset = PolicyPreset.BLOCK,
+            maxDownloadBytesPerSec = -1L,
+            maxUploadBytesPerSec = -1L,
+            networkCondition = NetworkTypeCondition.WIFI_ONLY,
+            priority = 90,
+            isEnabled = true
+        )
+
+        val stateWhenVpnOff = blockRuleWifi.evaluateEnforcementState(
+            isVpnRunning = false,
+            activeTransport = ActiveNetworkTransport.WIFI
+        )
+        assertEquals(com.example.core.model.RuleEnforcementState.SAVED_ONLY_VPN_OFF, stateWhenVpnOff)
+
+        val stateOnCellular = blockRuleWifi.evaluateEnforcementState(
+            isVpnRunning = true,
+            activeTransport = ActiveNetworkTransport.CELLULAR
+        )
+        assertEquals(com.example.core.model.RuleEnforcementState.INACTIVE_NETWORK_MISMATCH, stateOnCellular)
+
+        val stateEnforced = blockRuleWifi.evaluateEnforcementState(
+            isVpnRunning = true,
+            activeTransport = ActiveNetworkTransport.WIFI
+        )
+        assertEquals(com.example.core.model.RuleEnforcementState.ENFORCED_IN_KERNEL_VPN, stateEnforced)
+
+        val stateError = blockRuleWifi.evaluateEnforcementState(
+            isVpnRunning = true,
+            activeTransport = ActiveNetworkTransport.WIFI,
+            hasApplyError = true
+        )
+        assertEquals(com.example.core.model.RuleEnforcementState.FAILED_TO_APPLY, stateError)
+    }
+
+    @Test
+    fun `13 sort and filter options include all directive criteria`() {
+        assertEquals(7, com.example.ui.AppSortOption.entries.size)
+        assertEquals(6, com.example.ui.AppFilterOption.entries.size)
+    }
+
+    @Test
+    fun `14 bilingual Arabic and English model translations and RTL LTR flags`() {
+        assertTrue(AppLanguage.AR.isRtl)
+        assertFalse(AppLanguage.EN.isRtl)
+
+        assertEquals("حظر الاتصال", PolicyPreset.BLOCK.title(AppLanguage.AR))
+        assertEquals("Block", PolicyPreset.BLOCK.title(AppLanguage.EN))
+
+        assertEquals("المحرك يعمل", com.example.core.model.EngineUiState.RUNNING.title(AppLanguage.AR))
+        assertEquals("Engine Active", com.example.core.model.EngineUiState.RUNNING.title(AppLanguage.EN))
+    }
+
+    @Test
+    fun `15 per-network Wi-Fi and Cellular quick block helpers evaluate accurately`() {
+        val wifiOnlyBlock = TrafficRule(
+            uid = 1001,
+            packageName = "com.app.one",
+            appName = "App One",
+            preset = PolicyPreset.BLOCK,
+            maxDownloadBytesPerSec = -1L,
+            maxUploadBytesPerSec = -1L,
+            networkCondition = NetworkTypeCondition.WIFI_ONLY
+        )
+        assertTrue(wifiOnlyBlock.isWifiBlocked())
+        assertFalse(wifiOnlyBlock.isCellularBlocked())
+
+        val cellOnlyBlock = wifiOnlyBlock.copy(networkCondition = NetworkTypeCondition.CELLULAR_ONLY)
+        assertFalse(cellOnlyBlock.isWifiBlocked())
+        assertTrue(cellOnlyBlock.isCellularBlocked())
+
+        val bothBlock = wifiOnlyBlock.copy(networkCondition = NetworkTypeCondition.ANY)
+        assertTrue(bothBlock.isWifiBlocked())
+        assertTrue(bothBlock.isCellularBlocked())
+    }
+
+    @Test
+    fun `16 accounting engine preserves cumulative boot baseline when includeInitialBaselineInSession is enabled`() {
+        val accounting = TrafficAccountingEngine()
+        val chromeUid = 10142
+
+        // عند القراءة الأولى من الجلسة مع تفعيل includeInitialBaselineInSession، يجب حفظ الاستهلاك السابق وعدم تصفيره
+        val initial = accounting.recordSample(
+            uid = chromeUid,
+            currentKernelRxBytes = 2_500_000L,
+            currentKernelTxBytes = 350_000L,
+            activeTransport = ActiveNetworkTransport.WIFI,
+            nowMillis = 1_000L,
+            includeInitialBaselineInSession = true
+        )
+        assertEquals(2_500_000L, initial.sessionRxBytes)
+        assertEquals(350_000L, initial.sessionTxBytes)
+        assertEquals(2_850_000L, initial.wifiTotalBytes)
+        assertEquals(0L, initial.downloadBytesPerSec)
+
+        // عند حدوث تصفح جديد في Chrome، يزداد الاستهلاك والسرعة اللحظية فوراً
+        val afterBrowsing = accounting.recordSample(
+            uid = chromeUid,
+            currentKernelRxBytes = 3_100_000L,
+            currentKernelTxBytes = 420_000L,
+            activeTransport = ActiveNetworkTransport.WIFI,
+            nowMillis = 2_000L,
+            includeInitialBaselineInSession = true
+        )
+        assertEquals(3_100_000L, afterBrowsing.sessionRxBytes)
+        assertEquals(420_000L, afterBrowsing.sessionTxBytes)
+        assertEquals(600_000L, afterBrowsing.downloadBytesPerSec)
+        assertEquals(70_000L, afterBrowsing.uploadBytesPerSec)
+    }
+
+    @Test
+    fun `17 section 4_1 exact numerical accounting and binary vs decimal unit formatting`() {
+        val accounting = TrafficAccountingEngine()
+        val uid = 10801
+
+        // Sample 0 at t = 0.0 s: rxBytes = 1,000,000
+        val sample0 = accounting.recordSample(
+            uid = uid,
+            currentKernelRxBytes = 1_000_000L,
+            currentKernelTxBytes = 500_000L,
+            activeTransport = ActiveNetworkTransport.WIFI,
+            nowMillis = 0L
+        )
+        assertTrue(sample0.isAvailable)
+        assertEquals(0L, sample0.downloadBytesPerSec)
+
+        // Sample 1 at t = 2.0 s (2,000 ms): rxBytes = 1,020,000 -> deltaBytes = 20,000 -> rate = 10,000 B/s
+        val sample1 = accounting.recordSample(
+            uid = uid,
+            currentKernelRxBytes = 1_020_000L,
+            currentKernelTxBytes = 510_000L,
+            activeTransport = ActiveNetworkTransport.WIFI,
+            nowMillis = 2_000L
+        )
+        assertTrue(sample1.isAvailable)
+        assertEquals(20_000L, sample1.deltaRxBytes)
+        assertEquals(10_000L, sample1.downloadBytesPerSec)
+        assertEquals(5_000L, sample1.uploadBytesPerSec)
+
+        // Decimal KB/s: 10,000 / 1,000 = 10.0 KB/s
+        assertEquals("10.0 KB/s", UnitConverter.formatDecimalKBPerSec(sample1.downloadBytesPerSec))
+
+        // Binary KiB/s: 10,000 / 1,024 = 9.77 KiB/s
+        assertEquals("9.77 KiB/s", UnitConverter.formatBinaryKiBPerSec(sample1.downloadBytesPerSec))
+
+        // Binary 10 KiB/s = 10,240 B/s -> 10.00 KiB/s
+        assertEquals("10.00 KiB/s", UnitConverter.formatBinaryKiBPerSec(10_240L))
+        assertEquals("20.00 KiB/s", UnitConverter.formatBinaryKiBPerSec(20_480L))
+    }
+
+    @Test
+    fun `18 section 4_2 edge cases unavailable counters duplicate timestamps and zero traffic`() {
+        val accounting = TrafficAccountingEngine()
+        val uid = 10802
+
+        // 1. Unavailable counter (-1L or isCounterAvailable = false) must NEVER be converted to 0
+        val unavailableSample = accounting.recordSample(
+            uid = uid,
+            currentKernelRxBytes = -1L,
+            currentKernelTxBytes = -1L,
+            activeTransport = ActiveNetworkTransport.WIFI,
+            nowMillis = 1_000L,
+            isCounterAvailable = false
+        )
+        assertFalse(unavailableSample.isAvailable)
+        assertEquals(-1L, unavailableSample.sessionRxBytes)
+        assertEquals(-1L, unavailableSample.downloadBytesPerSec)
+        assertEquals("البيانات غير متاحة", UnitConverter.formatVolume(unavailableSample.sessionRxBytes, useArabicSymbols = true))
+        assertEquals("Traffic unavailable", UnitConverter.formatVolume(unavailableSample.sessionRxBytes, useArabicSymbols = false))
+        assertEquals("Blocked", UnitConverter.formatSpeed(unavailableSample.downloadBytesPerSec, BandwidthUnit.KB_PER_SEC, useArabicSymbols = false))
+
+        // 2. Initialize valid baseline at t = 2,000 ms
+        val initValid = accounting.recordSample(
+            uid = uid,
+            currentKernelRxBytes = 500_000L,
+            currentKernelTxBytes = 200_000L,
+            activeTransport = ActiveNetworkTransport.WIFI,
+            nowMillis = 2_000L,
+            isCounterAvailable = true
+        )
+        assertTrue(initValid.isAvailable)
+        assertEquals(0L, initValid.downloadBytesPerSec)
+
+        // 3. Active transfer at t = 3,000 ms (+20,480 B -> 20,480 B/s)
+        val activeSample = accounting.recordSample(
+            uid = uid,
+            currentKernelRxBytes = 520_480L,
+            currentKernelTxBytes = 210_240L,
+            activeTransport = ActiveNetworkTransport.WIFI,
+            nowMillis = 3_000L,
+            isCounterAvailable = true
+        )
+        assertEquals(20_480L, activeSample.downloadBytesPerSec)
+        assertEquals(10_240L, activeSample.uploadBytesPerSec)
+
+        // 4. Duplicate / out-of-order sample timestamp (nowMillis = 3,000 ms) must not divide by zero or double count
+        val duplicateSample = accounting.recordSample(
+            uid = uid,
+            currentKernelRxBytes = 520_480L,
+            currentKernelTxBytes = 210_240L,
+            activeTransport = ActiveNetworkTransport.WIFI,
+            nowMillis = 3_000L,
+            isCounterAvailable = true
+        )
+        assertTrue(duplicateSample.duplicateOrStaleSample)
+        assertEquals(0L, duplicateSample.deltaRxBytes)
+        assertEquals(20_480L, duplicateSample.downloadBytesPerSec)
+
+        // 5. Zero traffic over next 2 seconds (t = 5,000 ms) -> 0 B/s
+        val idleSample = accounting.recordSample(
+            uid = uid,
+            currentKernelRxBytes = 520_480L,
+            currentKernelTxBytes = 210_240L,
+            activeTransport = ActiveNetworkTransport.WIFI,
+            nowMillis = 5_000L,
+            isCounterAvailable = true
+        )
+        assertFalse(idleSample.duplicateOrStaleSample)
+        assertEquals(0L, idleSample.deltaRxBytes)
+        assertEquals(0L, idleSample.downloadBytesPerSec)
+    }
+
+    @Test
+    fun `19 section 5_4 seven mandatory rate limiting scenarios including 20 KiBs 10 KiBs and multi flow sharing`() {
+        val limiter = TokenBucketRateLimiter(maxQueueDepth = 512, maxAcceptableDelayMillis = 2_500L)
+        val baseNanos = 10_000_000_000L
+
+        // Scenario 1: Unlimited (0 B/s) -> full burst passes immediately without delay
+        val uidUnlimited = 10901
+        limiter.configureUidLimits(uidUnlimited, maxDownloadBytesPerSec = 0L, maxUploadBytesPerSec = 0L, nowNanos = baseNanos)
+        val unlimitedResult = limiter.executePacedTransferWindow(
+            uid = uidUnlimited,
+            isDownload = true,
+            durationMillis = 5_000L,
+            packetSizeBytes = 1024,
+            concurrentFlows = 1,
+            offeredPacketsPerTick = 4,
+            tickStepMillis = 20L,
+            startNanos = baseNanos
+        )
+        assertTrue(unlimitedResult.totalBytesTransferred >= 500_000L)
+        assertEquals(0, unlimitedResult.delayedPacketsCount)
+        assertEquals(0, unlimitedResult.droppedPacketsCount)
+
+        // Scenario 2: 20 KiB/s limit (20,480 B/s) over 5 seconds -> within 18-22 KiB/s (18,432..22,528 B/s)
+        val uid20K = 10902
+        limiter.configureUidLimits(
+            uid = uid20K,
+            maxDownloadBytesPerSec = PolicyPreset.MEDIUM.defaultDownloadBytesPerSec, // 20,480 B/s
+            maxUploadBytesPerSec = PolicyPreset.MEDIUM.defaultUploadBytesPerSec,
+            nowNanos = baseNanos
+        )
+        val result20K = limiter.executePacedTransferWindow(
+            uid = uid20K,
+            isDownload = true,
+            durationMillis = 5_000L,
+            packetSizeBytes = 1024,
+            concurrentFlows = 1,
+            offeredPacketsPerTick = 4,
+            tickStepMillis = 20L,
+            startNanos = baseNanos
+        )
+        assertTrue(
+            "Expected 20 KiB/s (18,432..22,528 B/s) but got ${result20K.measuredBytesPerSec} B/s",
+            result20K.measuredBytesPerSec in 18_432L..22_528L
+        )
+        assertTrue(result20K.delayedPacketsCount > 0)
+
+        // Scenario 3: 10 KiB/s limit (10,240 B/s) over 5 seconds -> within 9-11 KiB/s (9,216..11,264 B/s)
+        val uid10K = 10903
+        limiter.configureUidLimits(
+            uid = uid10K,
+            maxDownloadBytesPerSec = PolicyPreset.LOW.defaultDownloadBytesPerSec, // 10,240 B/s
+            maxUploadBytesPerSec = PolicyPreset.LOW.defaultUploadBytesPerSec,
+            nowNanos = baseNanos
+        )
+        val result10K = limiter.executePacedTransferWindow(
+            uid = uid10K,
+            isDownload = true,
+            durationMillis = 5_000L,
+            packetSizeBytes = 1024,
+            concurrentFlows = 1,
+            offeredPacketsPerTick = 4,
+            tickStepMillis = 20L,
+            startNanos = baseNanos
+        )
+        assertTrue(
+            "Expected 10 KiB/s (9,216..11,264 B/s) but got ${result10K.measuredBytesPerSec} B/s",
+            result10K.measuredBytesPerSec in 9_216L..11_264L
+        )
+        assertTrue(result10K.measuredBytesPerSec < result20K.measuredBytesPerSec)
+
+        // Scenario 4: Dynamic rate change mid-transfer (20 KiB/s -> 10 KiB/s) on uid20K
+        val midChangeNanos = baseNanos + 6_000_000_000L
+        limiter.configureUidLimits(
+            uid = uid20K,
+            maxDownloadBytesPerSec = PolicyPreset.LOW.defaultDownloadBytesPerSec, // 10,240 B/s
+            maxUploadBytesPerSec = PolicyPreset.LOW.defaultUploadBytesPerSec,
+            nowNanos = midChangeNanos
+        )
+        val afterChangeResult = limiter.executePacedTransferWindow(
+            uid = uid20K,
+            isDownload = true,
+            durationMillis = 5_000L,
+            packetSizeBytes = 1024,
+            concurrentFlows = 1,
+            offeredPacketsPerTick = 4,
+            tickStepMillis = 20L,
+            startNanos = midChangeNanos
+        )
+        assertTrue(
+            "Expected rate after dynamic change to drop to 10 KiB/s (9,216..11,264 B/s), got ${afterChangeResult.measuredBytesPerSec} B/s",
+            afterChangeResult.measuredBytesPerSec in 9_216L..11_264L
+        )
+
+        // Scenario 5: Blocked application (-1 B/s) -> 0 bytes transferred
+        val uidBlocked = 10904
+        limiter.configureUidLimits(uidBlocked, maxDownloadBytesPerSec = -1L, maxUploadBytesPerSec = -1L, nowNanos = baseNanos)
+        val blockedResult = limiter.executePacedTransferWindow(
+            uid = uidBlocked,
+            isDownload = true,
+            durationMillis = 5_000L,
+            packetSizeBytes = 1024,
+            concurrentFlows = 1,
+            offeredPacketsPerTick = 4,
+            tickStepMillis = 20L,
+            startNanos = baseNanos
+        )
+        assertEquals(0L, blockedResult.totalBytesTransferred)
+        assertEquals(0L, blockedResult.measuredBytesPerSec)
+        assertTrue(blockedResult.droppedPacketsCount > 0)
+
+        // Scenario 6: Two applications with different limits simultaneously (App A = 20 KiB/s, App B = 10 KiB/s)
+        val uidAppA = 10905
+        val uidAppB = 10906
+        limiter.configureUidLimits(uidAppA, maxDownloadBytesPerSec = 20_480L, maxUploadBytesPerSec = 20_480L, nowNanos = baseNanos)
+        limiter.configureUidLimits(uidAppB, maxDownloadBytesPerSec = 10_240L, maxUploadBytesPerSec = 10_240L, nowNanos = baseNanos)
+        val simA = limiter.executePacedTransferWindow(
+            uid = uidAppA,
+            isDownload = true,
+            durationMillis = 5_000L,
+            packetSizeBytes = 1024,
+            concurrentFlows = 1,
+            startNanos = baseNanos
+        )
+        val simB = limiter.executePacedTransferWindow(
+            uid = uidAppB,
+            isDownload = true,
+            durationMillis = 5_000L,
+            packetSizeBytes = 1024,
+            concurrentFlows = 1,
+            startNanos = baseNanos
+        )
+        assertTrue(simA.measuredBytesPerSec in 18_432L..22_528L)
+        assertTrue(simB.measuredBytesPerSec in 9_216L..11_264L)
+
+        // Scenario 7: Single application opening 4 simultaneous connections/ports shares one aggregate 20 KiB/s UID budget
+        val uidMultiConn = 10907
+        limiter.configureUidLimits(uidMultiConn, maxDownloadBytesPerSec = 20_480L, maxUploadBytesPerSec = 20_480L, nowNanos = baseNanos)
+        val multiFlowResult = limiter.executePacedTransferWindow(
+            uid = uidMultiConn,
+            isDownload = true,
+            durationMillis = 5_000L,
+            packetSizeBytes = 1024,
+            concurrentFlows = 4,
+            offeredPacketsPerTick = 4,
+            tickStepMillis = 20L,
+            startNanos = baseNanos
+        )
+        assertEquals(4, multiFlowResult.perFlowBytesTransferred.size)
+        assertTrue(
+            "Aggregate rate across 4 simultaneous flows must remain capped at 20 KiB/s (18,432..22,528 B/s), got ${multiFlowResult.measuredBytesPerSec} B/s",
+            multiFlowResult.measuredBytesPerSec in 18_432L..22_528L
+        )
     }
 }

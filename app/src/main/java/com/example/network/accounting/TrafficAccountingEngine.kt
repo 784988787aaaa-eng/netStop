@@ -7,11 +7,13 @@ import java.util.Calendar
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * محرك حساب معدلات النقل والاستهلاك التراكمي وإدارة الحصص (Traffic Accounting & Quota Manager - القسم الرابع والخامس).
+ * محرك حساب معدلات النقل والاستهلاك التراكمي وإدارة الحصص (Traffic Accounting & Quota Manager - القسم 14 و 15).
  *
- * ملاحظة هندسية حول دقة الحصص (Section 5 Quota Overage Documentation):
- * عند بلوغ التطبيق للحد الأقصى للحصة، قد يظهر تجاوز طفيف (In-Flight Margin) يتراوح عادة بين 16 KB إلى 64 KB
- * نتيجة الحزم الموجودة بالفعل داخل مخازن النواة (Kernel Socket Buffers) قبل تطبيق سياسة القطع أو التقييد في دورة القياس التالية (500ms-1000ms).
+ * المبادئ الهندسية المنفذة:
+ * 1. حساب السرعة من فرق العدادات وفاصل زمني معلوم.
+ * 2. التحقق الصريح من إعادة تعيين العدادات (Counter Reset Detection) عند انخفاض عداد النواة عن القراءة السابقة،
+ *    بحيث يحتفظ المحرك بالبايتات المتراكمة السابقة ولا يفقدها أو ينتج قيماً سالبة.
+ * 3. الحفاظ على الاستهلاك التراكمي منذ إقلاع الجهاز (`includeInitialBaselineInSession = true`) مع حساب السرعة اللحظية من التغير الفعلي فقط.
  */
 class TrafficAccountingEngine {
 
@@ -29,17 +31,22 @@ class TrafficAccountingEngine {
         val sessionTxBytes: Long,
         val wifiTotalBytes: Long,
         val cellularTotalBytes: Long,
+        val counterResetDetected: Boolean = false,
+        val isAvailable: Boolean = true,
+        val duplicateOrStaleSample: Boolean = false,
         val lastTimestampMillis: Long
     )
 
     private data class InternalState(
         var baselineRxBytes: Long,
         var baselineTxBytes: Long,
+        var priorAccumulatedRxBytes: Long = 0L,
+        var priorAccumulatedTxBytes: Long = 0L,
         var lastRxBytes: Long,
         var lastTxBytes: Long,
         var lastSampleMillis: Long,
-        var smoothedDownBps: Long = 0L,
-        var smoothedUpBps: Long = 0L,
+        var lastDownBps: Long = 0L,
+        var lastUpBps: Long = 0L,
         var wifiAccumulatedBytes: Long = 0L,
         var cellularAccumulatedBytes: Long = 0L
     )
@@ -47,50 +54,150 @@ class TrafficAccountingEngine {
     private val uidStates = ConcurrentHashMap<Int, InternalState>()
 
     /**
-     * يحسب السرعة اللحظية (بايت/ثانية) والاستهلاك التراكمي لـ UID بناءً على قراءات النواة أو محرك VPN.
+     * يحسب السرعة اللحظية الدقيقة (بايت/ثانية) والاستهلاك التراكمي لـ UID بناءً على قراءات النواة أو محرك الإسناد:
+     * rateBytesPerSecond = (currentBytes - previousBytes) / elapsedSeconds
+     * - يرفض تحويل القراءات غير المتاحة (UNSUPPORTED < 0 أو isCounterAvailable == false) إلى صفر (القسم 1.7 و 3.2).
+     * - يحمي من العينات المكررة أو المتأخرة زمنياً (nowMillis <= lastSampleMillis).
+     * - يعالج إعادة تعيين العدادات (Counter Reset) دون قيم سالبة أو ضياع التراكم السابق.
      */
     fun recordSample(
         uid: Int,
         currentKernelRxBytes: Long,
         currentKernelTxBytes: Long,
         activeTransport: ActiveNetworkTransport,
-        nowMillis: Long = System.currentTimeMillis()
+        nowMillis: Long = System.currentTimeMillis(),
+        includeInitialBaselineInSession: Boolean = false,
+        isCounterAvailable: Boolean = true
     ): UidAccountingSnapshot {
-        val safeRx = currentKernelRxBytes.coerceAtLeast(0L)
-        val safeTx = currentKernelTxBytes.coerceAtLeast(0L)
+        if (!isCounterAvailable || currentKernelRxBytes < 0L || currentKernelTxBytes < 0L) {
+            val existing = uidStates[uid]
+            return if (existing != null) {
+                synchronized(existing) {
+                    val sessionRx = existing.priorAccumulatedRxBytes + (existing.lastRxBytes - existing.baselineRxBytes).coerceAtLeast(0L)
+                    val sessionTx = existing.priorAccumulatedTxBytes + (existing.lastTxBytes - existing.baselineTxBytes).coerceAtLeast(0L)
+                    UidAccountingSnapshot(
+                        uid = uid,
+                        downloadBytesPerSec = -1L,
+                        uploadBytesPerSec = -1L,
+                        deltaRxBytes = 0L,
+                        deltaTxBytes = 0L,
+                        sessionRxBytes = sessionRx,
+                        sessionTxBytes = sessionTx,
+                        wifiTotalBytes = existing.wifiAccumulatedBytes,
+                        cellularTotalBytes = existing.cellularAccumulatedBytes,
+                        counterResetDetected = false,
+                        isAvailable = false,
+                        lastTimestampMillis = nowMillis
+                    )
+                }
+            } else {
+                UidAccountingSnapshot(
+                    uid = uid,
+                    downloadBytesPerSec = -1L,
+                    uploadBytesPerSec = -1L,
+                    deltaRxBytes = 0L,
+                    deltaTxBytes = 0L,
+                    sessionRxBytes = -1L,
+                    sessionTxBytes = -1L,
+                    wifiTotalBytes = -1L,
+                    cellularTotalBytes = -1L,
+                    counterResetDetected = false,
+                    isAvailable = false,
+                    lastTimestampMillis = nowMillis
+                )
+            }
+        }
 
+        val safeRx = currentKernelRxBytes
+        val safeTx = currentKernelTxBytes
+
+        var isFirstSampleForUid = false
         val state = uidStates.getOrPut(uid) {
+            isFirstSampleForUid = true
+            val initBaselineRx = if (includeInitialBaselineInSession) 0L else safeRx
+            val initBaselineTx = if (includeInitialBaselineInSession) 0L else safeTx
+            val initTotal = if (includeInitialBaselineInSession) (safeRx + safeTx) else 0L
+            val initWifi = if (activeTransport != ActiveNetworkTransport.CELLULAR) initTotal else 0L
+            val initCell = if (activeTransport == ActiveNetworkTransport.CELLULAR) initTotal else 0L
             InternalState(
-                baselineRxBytes = safeRx,
-                baselineTxBytes = safeTx,
+                baselineRxBytes = initBaselineRx,
+                baselineTxBytes = initBaselineTx,
                 lastRxBytes = safeRx,
                 lastTxBytes = safeTx,
-                lastSampleMillis = nowMillis
+                lastSampleMillis = nowMillis,
+                wifiAccumulatedBytes = initWifi,
+                cellularAccumulatedBytes = initCell
             )
         }
 
         synchronized(state) {
-            val elapsedMillis = (nowMillis - state.lastSampleMillis).coerceAtLeast(1L)
-            val deltaRx = (safeRx - state.lastRxBytes).coerceAtLeast(0L)
-            val deltaTx = (safeTx - state.lastTxBytes).coerceAtLeast(0L)
-
-            val instantDownBps = if (elapsedMillis >= 100L) {
-                (deltaRx * 1000L) / elapsedMillis
-            } else {
-                state.smoothedDownBps
+            if (isFirstSampleForUid) {
+                val sessionRx = state.priorAccumulatedRxBytes + (safeRx - state.baselineRxBytes).coerceAtLeast(0L)
+                val sessionTx = state.priorAccumulatedTxBytes + (safeTx - state.baselineTxBytes).coerceAtLeast(0L)
+                return UidAccountingSnapshot(
+                    uid = uid,
+                    downloadBytesPerSec = 0L,
+                    uploadBytesPerSec = 0L,
+                    deltaRxBytes = 0L,
+                    deltaTxBytes = 0L,
+                    sessionRxBytes = sessionRx,
+                    sessionTxBytes = sessionTx,
+                    wifiTotalBytes = state.wifiAccumulatedBytes,
+                    cellularTotalBytes = state.cellularAccumulatedBytes,
+                    counterResetDetected = false,
+                    isAvailable = true,
+                    lastTimestampMillis = nowMillis
+                )
             }
-            val instantUpBps = if (elapsedMillis >= 100L) {
-                (deltaTx * 1000L) / elapsedMillis
-            } else {
-                state.smoothedUpBps
+
+            // حماية من العينات المكررة أو غير المتقدمة زمنياً (Duplicate / Out-of-order Sample Protection)
+            if (nowMillis <= state.lastSampleMillis) {
+                val sessionRx = state.priorAccumulatedRxBytes + (state.lastRxBytes - state.baselineRxBytes).coerceAtLeast(0L)
+                val sessionTx = state.priorAccumulatedTxBytes + (state.lastTxBytes - state.baselineTxBytes).coerceAtLeast(0L)
+                return UidAccountingSnapshot(
+                    uid = uid,
+                    downloadBytesPerSec = state.lastDownBps,
+                    uploadBytesPerSec = state.lastUpBps,
+                    deltaRxBytes = 0L,
+                    deltaTxBytes = 0L,
+                    sessionRxBytes = sessionRx,
+                    sessionTxBytes = sessionTx,
+                    wifiTotalBytes = state.wifiAccumulatedBytes,
+                    cellularTotalBytes = state.cellularAccumulatedBytes,
+                    counterResetDetected = false,
+                    isAvailable = true,
+                    duplicateOrStaleSample = true,
+                    lastTimestampMillis = state.lastSampleMillis
+                )
             }
 
-            // تنعيم أسي خفيف (70% قراءة لحظية + 30% قراءة سابقة) لتجنب التذبذب الحاد مع الحفاظ على الاستجابة الفورية
-            val downBps = if (deltaRx == 0L) 0L else ((instantDownBps * 7L + state.smoothedDownBps * 3L) / 10L).coerceAtLeast(1L)
-            val upBps = if (deltaTx == 0L) 0L else ((instantUpBps * 7L + state.smoothedUpBps * 3L) / 10L).coerceAtLeast(1L)
+            val elapsedMillis = nowMillis - state.lastSampleMillis
 
-            state.smoothedDownBps = downBps
-            state.smoothedUpBps = upBps
+            // التحقق من إعادة تعيين العدادات (Counter Reset Detection - Section 3.3 & 4.1)
+            var resetDetected = false
+            val deltaRx = if (safeRx < state.lastRxBytes) {
+                resetDetected = true
+                state.priorAccumulatedRxBytes += (state.lastRxBytes - state.baselineRxBytes).coerceAtLeast(0L)
+                state.baselineRxBytes = 0L
+                safeRx
+            } else {
+                safeRx - state.lastRxBytes
+            }
+
+            val deltaTx = if (safeTx < state.lastTxBytes) {
+                resetDetected = true
+                state.priorAccumulatedTxBytes += (state.lastTxBytes - state.baselineTxBytes).coerceAtLeast(0L)
+                state.baselineTxBytes = 0L
+                safeTx
+            } else {
+                safeTx - state.lastTxBytes
+            }
+
+            val downBps = if (deltaRx == 0L) 0L else (deltaRx * 1000L) / elapsedMillis
+            val upBps = if (deltaTx == 0L) 0L else (deltaTx * 1000L) / elapsedMillis
+
+            state.lastDownBps = downBps
+            state.lastUpBps = upBps
             state.lastRxBytes = safeRx
             state.lastTxBytes = safeTx
             state.lastSampleMillis = nowMillis
@@ -108,8 +215,8 @@ class TrafficAccountingEngine {
                 }
             }
 
-            val sessionRx = (safeRx - state.baselineRxBytes).coerceAtLeast(0L)
-            val sessionTx = (safeTx - state.baselineTxBytes).coerceAtLeast(0L)
+            val sessionRx = state.priorAccumulatedRxBytes + (safeRx - state.baselineRxBytes).coerceAtLeast(0L)
+            val sessionTx = state.priorAccumulatedTxBytes + (safeTx - state.baselineTxBytes).coerceAtLeast(0L)
 
             return UidAccountingSnapshot(
                 uid = uid,
@@ -121,6 +228,8 @@ class TrafficAccountingEngine {
                 sessionTxBytes = sessionTx,
                 wifiTotalBytes = state.wifiAccumulatedBytes,
                 cellularTotalBytes = state.cellularAccumulatedBytes,
+                counterResetDetected = resetDetected,
+                isAvailable = true,
                 lastTimestampMillis = nowMillis
             )
         }
