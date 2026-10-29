@@ -26,6 +26,7 @@
     <string name="loading_apps">Loading apps…</string>
     <string name="no_apps">No matching apps</string>
     <string name="apply">Apply</string>
+    <string name="cancel">Cancel</string>
     <string name="custom_speed">Custom speed</string>
     <string name="speed_k">%1$dK</string>
     <string name="speed_1m">1M</string>

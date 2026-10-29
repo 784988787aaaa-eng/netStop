@@ -127,51 +127,59 @@ class NetLimiterVpnService : VpnService() {
             return
         }
         backend.clearRoot()
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            closeProxyAndVpn()
-            activeModeLabel = getString(R.string.mode_proxy_requires_q)
-            return
-        }
+
         runCatching {
-            if (proxyServer == null) {
-                val manager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
-                proxyServer = LocalThrottledProxyServer(
-                    connectivityManager = manager,
-                    protectSocket = backend::protect,
-                    rulesProvider = { cachedRules },
-                    networkProvider = { currentNetwork },
-                    defaultLimitProvider = { defaultLimitBytesPerSecond }
-                )
+            val sinkholeOnly = enabledRules.isNotEmpty() && enabledRules.all {
+                it.policyFor(isWifi) == NetworkPolicy.BLOCK
             }
-            val proxyPort = proxyServer!!.start()
-            proxyServer!!.updatePolicy()
+
+            var proxyPort = -1
+            if (!sinkholeOnly) {
+                if (proxyServer == null) {
+                    val manager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+                    proxyServer = LocalThrottledProxyServer(
+                        connectivityManager = manager,
+                        protectSocket = backend::protect,
+                        rulesProvider = { cachedRules },
+                        networkProvider = { currentNetwork },
+                        defaultLimitProvider = { defaultLimitBytesPerSecond }
+                    )
+                }
+                proxyPort = proxyServer!!.start()
+                proxyServer!!.updatePolicy()
+            }
+
             stopSinkholeDrain()
             runCatching { vpnInterface?.close() }
             vpnInterface = null
             sinkholeOnlyMode = false
-            val sinkholeOnly = enabledRules.isNotEmpty() && enabledRules.all {
-                it.policyFor(isWifi) == NetworkPolicy.BLOCK
-            }
+
             val builder = Builder()
                 .setSession(getString(R.string.app_name))
-                .addAddress("10.111.0.1", 32)
+                .addAddress("10.111.0.1", 24)
+                .addRoute("0.0.0.0", 0)
+                .addDnsServer("8.8.8.8")
+            runCatching {
+                builder.addAddress("fd00:111:111::1", 64)
+                builder.addRoute("::", 0)
+            }
+
             var allowedApplicationCount = 0
             enabledRules.forEach { rule ->
                 if (runCatching { builder.addAllowedApplication(rule.packageName); true }.getOrDefault(false)) {
                     allowedApplicationCount++
                 }
             }
-            if (allowedApplicationCount == 0 || allowedApplicationCount != enabledRules.size) {
-                throw IllegalStateException("Unable to allowlist every controlled application safely")
+            if (allowedApplicationCount == 0) {
+                closeProxyAndVpn()
+                activeModeLabel = getString(R.string.mode_no_active_rules)
+                return
             }
-            if (sinkholeOnly) {
-                // Only allowlisted BLOCK apps are routed here; the JNI drain loop below
-                // reads and discards their packets instead of allowing the TUN queue to fill.
-                builder.addRoute("0.0.0.0", 0)
-                runCatching { builder.addAddress("fd00:111:111::1", 128); builder.addRoute("::", 0) }
-            } else {
+
+            if (!sinkholeOnly && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && proxyPort > 0) {
                 builder.setHttpProxy(ProxyInfo.buildDirectProxy("127.0.0.1", proxyPort))
             }
+
             val established = builder.establish()
             if (established == null) {
                 closeProxyAndVpn()
@@ -179,7 +187,7 @@ class NetLimiterVpnService : VpnService() {
             } else {
                 vpnInterface = established
                 sinkholeOnlyMode = sinkholeOnly
-                if (sinkholeOnly) startSinkholeDrain(established)
+                startSinkholeDrain(established)
                 activeModeLabel = if (sinkholeOnly) getString(R.string.mode_sinkhole_block)
                     else getString(R.string.mode_local_proxy)
             }
@@ -192,12 +200,24 @@ class NetLimiterVpnService : VpnService() {
     private fun startSinkholeDrain(tun: ParcelFileDescriptor) {
         sinkholeDrainJob?.cancel()
         sinkholeDrainJob = serviceScope.launch {
-            while (isActive && sinkholeOnlyMode && vpnInterface === tun) {
-                val result = tun2SocksBridge.drainSinkholePacket(tun.fd, timeoutMs = 100)
-                // poll() already waits up to 100ms; short backoff protects devices
-                // where JNI is unavailable and returns immediately with an error.
-                if (result <= 0) delay(10L)
+            val fallbackBuf = ByteArray(4096)
+            var useFallbackStream = false
+            var inputStream: java.io.FileInputStream? = null
+            while (isActive && vpnInterface === tun) {
+                if (!useFallbackStream) {
+                    val result = tun2SocksBridge.drainSinkholePacket(tun.fd, timeoutMs = 100)
+                    if (result < 0) {
+                        useFallbackStream = true
+                        inputStream = runCatching { java.io.FileInputStream(tun.fileDescriptor) }.getOrNull()
+                    } else if (result == 0) {
+                        delay(10L)
+                    }
+                } else {
+                    val bytes = runCatching { inputStream?.read(fallbackBuf) ?: -1 }.getOrDefault(-1)
+                    if (bytes <= 0) delay(20L)
+                }
             }
+            runCatching { inputStream?.close() }
         }
     }
 

@@ -173,89 +173,180 @@ private fun MainScreen(
     showKeepAlive: Boolean,
     onKeepAlive: () -> Unit
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+    var showDefaultSpeedDialog by remember { mutableStateOf(false) }
+
+    if (showDefaultSpeedDialog) {
+        DefaultSpeedDialog(
+            currentBytesPerSecond = state.defaultLimitBytesPerSecond,
+            onDismiss = { showDefaultSpeedDialog = false },
+            onApply = {
+                onDefaultSpeed(it)
+                showDefaultSpeedDialog = false
+            }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(colorResource(R.color.color_background))
-            .padding(dimensionResource(R.dimen.space_small))
+            .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
+        // Row 1: Compact Top Bar (Service Switch/Button + Search + Overflow Menu)
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(dimensionResource(R.dimen.space_small))
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            TextButton(onClick = { onVpnToggle(!state.vpnRunning) }) {
+            Button(
+                onClick = { onVpnToggle(!state.vpnRunning) },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                modifier = Modifier.height(38.dp),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = if (state.vpnRunning) colorResource(R.color.color_accent)
+                    else colorResource(R.color.color_primary)
+                )
+            ) {
                 Text(
-                    if (state.vpnRunning) stringResource(R.string.service_stop)
+                    text = if (state.vpnRunning) stringResource(R.string.service_stop)
                     else stringResource(R.string.service_start),
-                    fontSize = dimensionResource(R.dimen.text_size_body).value.sp
+                    fontSize = 13.sp
                 )
             }
-            if (showKeepAlive) {
-                TextButton(onClick = onKeepAlive) {
-                    Text(stringResource(R.string.keep_alive), fontSize = dimensionResource(R.dimen.text_size_small).value.sp)
-                }
-            }
+
             OutlinedTextField(
                 value = state.searchQuery,
                 onValueChange = onSearch,
                 modifier = Modifier.weight(1f),
                 singleLine = true,
-                label = { Text(stringResource(R.string.search_apps)) }
+                placeholder = { Text(stringResource(R.string.search_apps), fontSize = 13.sp) },
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp)
             )
+
+            androidx.compose.foundation.layout.Box {
+                androidx.compose.material3.IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Text("⋮", fontSize = 24.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                }
+
+                androidx.compose.material3.DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(stringResource(R.string.default_limit)) },
+                        onClick = {
+                            showMenu = false
+                            showDefaultSpeedDialog = true
+                        }
+                    )
+                    androidx.compose.material3.HorizontalDivider()
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(stringResource(R.string.block_all_wifi)) },
+                        onClick = {
+                            showMenu = false
+                            onBlockWifiAll()
+                        }
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(stringResource(R.string.allow_all_wifi)) },
+                        onClick = {
+                            showMenu = false
+                            onAllowWifiAll()
+                        }
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(stringResource(R.string.block_all_mobile)) },
+                        onClick = {
+                            showMenu = false
+                            onBlockMobileAll()
+                        }
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(stringResource(R.string.allow_all_mobile)) },
+                        onClick = {
+                            showMenu = false
+                            onAllowMobileAll()
+                        }
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(stringResource(R.string.throttle_all_default)) },
+                        onClick = {
+                            showMenu = false
+                            onThrottleAll()
+                        }
+                    )
+                    if (showKeepAlive) {
+                        androidx.compose.material3.HorizontalDivider()
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text(stringResource(R.string.keep_alive)) },
+                            onClick = {
+                                showMenu = false
+                                onKeepAlive()
+                            }
+                        )
+                    }
+                }
+            }
         }
+
+        // Row 2: Filter Chips + Compact Mode & Traffic Badge
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(dimensionResource(R.dimen.space_small)),
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(36.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             FilterChip(
                 selected = state.filter == AppFilter.ALL,
                 onClick = { onFilter(AppFilter.ALL) },
-                label = { Text(stringResource(R.string.filter_all)) }
+                label = { Text(stringResource(R.string.filter_all), fontSize = 11.sp) },
+                modifier = Modifier.scale(0.88f)
             )
             FilterChip(
                 selected = state.filter == AppFilter.USER,
                 onClick = { onFilter(AppFilter.USER) },
-                label = { Text(stringResource(R.string.filter_user)) }
+                label = { Text(stringResource(R.string.filter_user), fontSize = 11.sp) },
+                modifier = Modifier.scale(0.88f)
             )
             FilterChip(
                 selected = state.filter == AppFilter.SYSTEM,
                 onClick = { onFilter(AppFilter.SYSTEM) },
-                label = { Text(stringResource(R.string.filter_system)) }
+                label = { Text(stringResource(R.string.filter_system), fontSize = 11.sp) },
+                modifier = Modifier.scale(0.88f)
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = "${state.activeModeLabel.ifBlank { stringResource(R.string.mode_inactive) }} · ${formatLiveRate(state.liveRatesByUid.values.sum())}",
+                fontSize = 11.sp,
+                color = colorResource(R.color.color_text_secondary),
+                maxLines = 1
             )
         }
-        DefaultSpeedRow(
-            currentBytesPerSecond = state.defaultLimitBytesPerSecond,
-            onApply = onDefaultSpeed
-        )
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = onBlockWifiAll) { Text(stringResource(R.string.block_all_wifi)) }
-                TextButton(onClick = onAllowWifiAll) { Text(stringResource(R.string.allow_all_wifi)) }
-                TextButton(onClick = onBlockMobileAll) { Text(stringResource(R.string.block_all_mobile)) }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = onAllowMobileAll) { Text(stringResource(R.string.allow_all_mobile)) }
-                TextButton(onClick = onThrottleAll) { Text(stringResource(R.string.throttle_all_default)) }
-            }
-        }
-        Text(
-            text = stringResource(
-                R.string.active_mode_label,
-                state.activeModeLabel.ifBlank { stringResource(R.string.mode_inactive) }
-            ),
-            modifier = Modifier.padding(vertical = dimensionResource(R.dimen.space_xsmall)),
-            fontSize = dimensionResource(R.dimen.text_size_small).value.sp
-        )
+
         if (state.isLoading) {
-            Text(stringResource(R.string.loading_apps), modifier = Modifier.padding(dimensionResource(R.dimen.space_medium)))
+            Text(
+                stringResource(R.string.loading_apps),
+                modifier = Modifier.padding(16.dp),
+                fontSize = 13.sp
+            )
         } else if (state.visibleApps.isEmpty()) {
-            Text(stringResource(R.string.no_apps), modifier = Modifier.padding(dimensionResource(R.dimen.space_medium)))
+            Text(
+                stringResource(R.string.no_apps),
+                modifier = Modifier.padding(16.dp),
+                fontSize = 13.sp
+            )
         }
+
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(dimensionResource(R.dimen.space_xsmall))
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             items(
                 items = state.visibleApps,
@@ -279,7 +370,11 @@ private fun MainScreen(
 }
 
 @Composable
-private fun DefaultSpeedRow(currentBytesPerSecond: Long, onApply: (Double) -> Unit) {
+private fun DefaultSpeedDialog(
+    currentBytesPerSecond: Long,
+    onDismiss: () -> Unit,
+    onApply: (Double) -> Unit
+) {
     var input by remember(currentBytesPerSecond) {
         mutableStateOf(
             String.format(
@@ -289,28 +384,36 @@ private fun DefaultSpeedRow(currentBytesPerSecond: Long, onApply: (Double) -> Un
             )
         )
     }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(dimensionResource(R.dimen.space_small))
-    ) {
-        Text(stringResource(R.string.default_limit), fontSize = dimensionResource(R.dimen.text_size_small).value.sp)
-        OutlinedTextField(
-            value = input,
-            onValueChange = { candidate ->
-                if (candidate.all { it.isDigit() || it == '.' || it == ',' }) input = candidate
-            },
-            modifier = Modifier.weight(1f),
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            suffix = { Text(stringResource(R.string.unit_kb_per_second)) }
-        )
-        TextButton(onClick = {
-            input.trim().replace(',', '.').toDoubleOrNull()?.let(onApply)
-        }) {
-            Text(stringResource(R.string.apply))
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.default_limit)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.speed_limit), fontSize = 12.sp)
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { candidate ->
+                        if (candidate.all { it.isDigit() || it == '.' || it == ',' }) input = candidate
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    suffix = { Text(stringResource(R.string.unit_kb_per_second)) }
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                input.trim().replace(',', '.').toDoubleOrNull()?.let(onApply)
+            }) {
+                Text(stringResource(R.string.apply))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
         }
-    }
+    )
 }
 
 @Composable
@@ -326,65 +429,106 @@ private fun AppRow(
     onTargetNetwork: (RuleNetworkTarget) -> Unit,
     onSetPolicy: (RuleNetworkTarget, NetworkPolicy) -> Unit
 ) {
+    val imageBitmap = remember(row.app.packageName) { row.app.iconBitmap.asImageBitmap() }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colorResource(R.color.color_surface), RoundedCornerShape(dimensionResource(R.dimen.corner_radius)))
+            .background(colorResource(R.color.color_surface), RoundedCornerShape(8.dp))
             .clickable(onClick = onExpand)
-            .padding(horizontal = dimensionResource(R.dimen.space_small), vertical = dimensionResource(R.dimen.space_xsmall))
+            .padding(horizontal = 8.dp, vertical = 6.dp)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(dimensionResource(R.dimen.row_min_height)),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(dimensionResource(R.dimen.space_small))
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Image(
-                bitmap = row.app.icon.toBitmap().asImageBitmap(),
+                bitmap = imageBitmap,
                 contentDescription = null,
-                modifier = Modifier.size(dimensionResource(R.dimen.icon_size))
+                modifier = Modifier.size(38.dp)
             )
             Column(modifier = Modifier.weight(1f)) {
-                Text(row.app.label, fontSize = dimensionResource(R.dimen.text_size_body).value.sp, maxLines = 1)
                 Text(
-                    "${stringResource(R.string.uid)} ${row.app.uid} · ${row.app.packageName}",
-                    fontSize = dimensionResource(R.dimen.text_size_small).value.sp,
+                    text = row.app.label,
+                    fontSize = 14.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                    maxLines = 1
+                )
+                Text(
+                    text = "${stringResource(R.string.uid)} ${row.app.uid} · ${row.app.packageName}",
+                    fontSize = 11.sp,
                     color = colorResource(R.color.color_text_secondary),
                     maxLines = 1
                 )
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(stringResource(R.string.wifi), fontSize = dimensionResource(R.dimen.text_size_small).value.sp)
-                Switch(checked = row.rule.wifiPolicy != NetworkPolicy.ALLOW, onCheckedChange = onToggleWifi, modifier = Modifier.scale(0.8f))
+                Text(stringResource(R.string.wifi), fontSize = 10.sp)
+                Switch(
+                    checked = row.rule.wifiPolicy != NetworkPolicy.ALLOW,
+                    onCheckedChange = onToggleWifi,
+                    modifier = Modifier.scale(0.72f)
+                )
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(stringResource(R.string.mobile_data), fontSize = dimensionResource(R.dimen.text_size_small).value.sp)
-                Switch(checked = row.rule.mobilePolicy != NetworkPolicy.ALLOW, onCheckedChange = onToggleMobile, modifier = Modifier.scale(0.8f))
+                Text(stringResource(R.string.mobile_data), fontSize = 10.sp)
+                Switch(
+                    checked = row.rule.mobilePolicy != NetworkPolicy.ALLOW,
+                    onCheckedChange = onToggleMobile,
+                    modifier = Modifier.scale(0.72f)
+                )
             }
         }
         Text(
             text = "${stringResource(R.string.wifi)}: ${policyLabel(row.rule.wifiPolicy, row.rule.wifiLimitBytesPerSecond)} · " +
                 "${stringResource(R.string.mobile_data)}: ${policyLabel(row.rule.mobilePolicy, row.rule.mobileDataLimitBytesPerSecond)} · " +
                 "${stringResource(R.string.live_now)}: ${formatLiveRate(liveRate)}",
-            fontSize = dimensionResource(R.dimen.text_size_small).value.sp,
+            fontSize = 11.sp,
             color = colorResource(R.color.color_text_secondary),
-            maxLines = 1
+            maxLines = 1,
+            modifier = Modifier.padding(top = 2.dp)
         )
         if (row.expanded) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                FilterChip(selected = row.targetNetwork == RuleNetworkTarget.BOTH, onClick = { onTargetNetwork(RuleNetworkTarget.BOTH) }, label = { Text(stringResource(R.string.network_both)) })
-                FilterChip(selected = row.targetNetwork == RuleNetworkTarget.WIFI, onClick = { onTargetNetwork(RuleNetworkTarget.WIFI) }, label = { Text(stringResource(R.string.wifi)) })
-                FilterChip(selected = row.targetNetwork == RuleNetworkTarget.MOBILE, onClick = { onTargetNetwork(RuleNetworkTarget.MOBILE) }, label = { Text(stringResource(R.string.mobile_data)) })
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilterChip(
+                    selected = row.targetNetwork == RuleNetworkTarget.BOTH,
+                    onClick = { onTargetNetwork(RuleNetworkTarget.BOTH) },
+                    label = { Text(stringResource(R.string.network_both), fontSize = 11.sp) }
+                )
+                FilterChip(
+                    selected = row.targetNetwork == RuleNetworkTarget.WIFI,
+                    onClick = { onTargetNetwork(RuleNetworkTarget.WIFI) },
+                    label = { Text(stringResource(R.string.wifi), fontSize = 11.sp) }
+                )
+                FilterChip(
+                    selected = row.targetNetwork == RuleNetworkTarget.MOBILE,
+                    onClick = { onTargetNetwork(RuleNetworkTarget.MOBILE) },
+                    label = { Text(stringResource(R.string.mobile_data), fontSize = 11.sp) }
+                )
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { onSetPolicy(row.targetNetwork, NetworkPolicy.BLOCK) }) { Text(stringResource(R.string.policy_block)) }
-                TextButton(onClick = { onSetPolicy(row.targetNetwork, NetworkPolicy.ALLOW) }) { Text(stringResource(R.string.policy_allow)) }
-                TextButton(onClick = { onSetPolicy(row.targetNetwork, NetworkPolicy.THROTTLE) }) { Text(stringResource(R.string.policy_throttle)) }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = { onSetPolicy(row.targetNetwork, NetworkPolicy.BLOCK) }) {
+                    Text(stringResource(R.string.policy_block), color = colorResource(R.color.color_error))
+                }
+                TextButton(onClick = { onSetPolicy(row.targetNetwork, NetworkPolicy.THROTTLE) }) {
+                    Text(stringResource(R.string.policy_throttle))
+                }
+                TextButton(onClick = { onSetPolicy(row.targetNetwork, NetworkPolicy.ALLOW) }) {
+                    Text(stringResource(R.string.policy_allow))
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(dimensionResource(R.dimen.space_xsmall)),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 listOf(100L, 250L, 500L, 1000L).forEach { speed ->
@@ -394,14 +538,14 @@ private fun AppRow(
                                 1000L -> stringResource(R.string.speed_1m)
                                 else -> stringResource(R.string.speed_k, speed)
                             },
-                            fontSize = dimensionResource(R.dimen.text_size_small).value.sp
+                            fontSize = 11.sp
                         )
                     }
                 }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(dimensionResource(R.dimen.space_small)),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
@@ -410,27 +554,16 @@ private fun AppRow(
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    label = { Text(stringResource(R.string.custom_speed)) },
-                    suffix = { Text(stringResource(R.string.unit_kb_per_second)) }
+                    label = { Text(stringResource(R.string.custom_speed), fontSize = 11.sp) },
+                    suffix = { Text(stringResource(R.string.unit_kb_per_second), fontSize = 11.sp) }
                 )
                 Button(onClick = onApplySpeed) {
-                    Text(stringResource(R.string.apply))
+                    Text(stringResource(R.string.apply), fontSize = 12.sp)
                 }
             }
         }
     }
 }
-
-private fun Drawable.toBitmap(): Bitmap {
-    val width = intrinsicWidth.coerceAtLeast(1)
-    val height = intrinsicHeight.coerceAtLeast(1)
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    setBounds(0, 0, canvas.width, canvas.height)
-    draw(canvas)
-    return bitmap
-}
-
 
 @Composable
 private fun policyLabel(policy: NetworkPolicy, limitBytesPerSecond: Long): String = when (policy) {

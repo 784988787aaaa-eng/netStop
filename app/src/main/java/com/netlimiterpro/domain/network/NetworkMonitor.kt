@@ -18,8 +18,8 @@ enum class ActiveNetworkKind {
 }
 
 /**
- * Observes the default network and excludes VPN transports when determining
- * the underlying transport. The callback is registered only while collected.
+ * Observes the underlying network transport (Wi-Fi, Cellular, Other, or Offline)
+ * excluding VPN transports. Fully compatible with Android 8.0+ (API 26) and EMUI 8.
  */
 class NetworkMonitor(context: Context) {
     private val connectivity = context.applicationContext
@@ -27,29 +27,51 @@ class NetworkMonitor(context: Context) {
 
     fun observe(): Flow<ActiveNetworkKind> = callbackFlow {
         fun resolveUnderlying(): ActiveNetworkKind {
-            val networks = connectivity.allNetworks
             var hasWifi = false
             var hasCellular = false
-            for (network in networks) {
-                val caps = connectivity.getNetworkCapabilities(network) ?: continue
-                if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ||
-                    !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-                ) continue
-                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue
-                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) hasWifi = true
-                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) hasCellular = true
-            }
-            return when {
-                hasWifi -> ActiveNetworkKind.WIFI
-                hasCellular -> ActiveNetworkKind.CELLULAR
-                else -> {
-                    val active = connectivity.activeNetwork
-                    val caps = active?.let(connectivity::getNetworkCapabilities)
-                    if (caps == null || !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
-                        ActiveNetworkKind.OFFLINE
-                    } else ActiveNetworkKind.OTHER
+
+            // 1. Inspect all active networks via NetworkCapabilities
+            runCatching {
+                val networks = connectivity.allNetworks
+                for (network in networks) {
+                    val caps = connectivity.getNetworkCapabilities(network) ?: continue
+                    if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue
+                    // Do NOT require NET_CAPABILITY_VALIDATED: EMUI 8/Android 8 often omits it
+                    if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) continue
+                    if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) hasWifi = true
+                    if (caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) hasCellular = true
                 }
             }
+
+            if (hasWifi) return ActiveNetworkKind.WIFI
+            if (hasCellular) return ActiveNetworkKind.CELLULAR
+
+            // 2. Active network capabilities fallback (API 23+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val activeNetwork = runCatching { connectivity.activeNetwork }.getOrNull()
+                val caps = activeNetwork?.let { runCatching { connectivity.getNetworkCapabilities(it) }.getOrNull() }
+                if (caps != null && !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                    if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return ActiveNetworkKind.WIFI
+                    if (caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) return ActiveNetworkKind.CELLULAR
+                    if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return ActiveNetworkKind.OTHER
+                }
+            }
+
+            // 3. Robust fallback using activeNetworkInfo (vital for Huawei EMUI 8 / Android 8.0)
+            @Suppress("DEPRECATION")
+            val activeInfo = runCatching { connectivity.activeNetworkInfo }.getOrNull()
+            if (activeInfo != null && activeInfo.isConnected) {
+                return when (activeInfo.type) {
+                    ConnectivityManager.TYPE_WIFI, ConnectivityManager.TYPE_WIMAX -> ActiveNetworkKind.WIFI
+                    ConnectivityManager.TYPE_MOBILE,
+                    ConnectivityManager.TYPE_MOBILE_DUN,
+                    ConnectivityManager.TYPE_MOBILE_HIPRI -> ActiveNetworkKind.CELLULAR
+                    ConnectivityManager.TYPE_ETHERNET -> ActiveNetworkKind.OTHER
+                    else -> ActiveNetworkKind.OTHER
+                }
+            }
+
+            return ActiveNetworkKind.OFFLINE
         }
 
         val callback = object : ConnectivityManager.NetworkCallback() {
@@ -68,7 +90,13 @@ class NetworkMonitor(context: Context) {
 
         trySend(resolveUnderlying())
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            connectivity.registerDefaultNetworkCallback(callback)
+            runCatching { connectivity.registerDefaultNetworkCallback(callback) }
+                .onFailure {
+                    val request = NetworkRequest.Builder()
+                        .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                        .build()
+                    connectivity.registerNetworkCallback(request, callback)
+                }
         } else {
             val request = NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)

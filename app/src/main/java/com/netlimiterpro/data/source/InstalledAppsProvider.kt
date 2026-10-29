@@ -3,6 +3,8 @@ package com.netlimiterpro.data.source
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.os.Build
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +20,7 @@ data class InstalledApp(
     val packageName: String,
     val uid: Int,
     val kind: InstalledAppKind,
-    val icon: Drawable
+    val iconBitmap: Bitmap
 )
 
 class InstalledAppsProvider(context: Context) {
@@ -26,22 +28,36 @@ class InstalledAppsProvider(context: Context) {
     private val packageManager = appContext.packageManager
 
     suspend fun loadInstalledApps(): List<InstalledApp> = withContext(Dispatchers.IO) {
-        val applications = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            packageManager.getInstalledApplications(
-                PackageManager.ApplicationInfoFlags.of(PackageManager.GET_META_DATA.toLong())
-            )
+        val internetPackages = runCatching {
+            packageManager.getPackagesHoldingPermissions(
+                arrayOf(android.Manifest.permission.INTERNET), 0
+            ).mapNotNull { it.applicationInfo }
+        }.getOrNull()
+
+        val appInfos = if (!internetPackages.isNullOrEmpty()) {
+            internetPackages
         } else {
-            @Suppress("DEPRECATION")
-            packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+            // Fallback if getPackagesHoldingPermissions returns empty or throws
+            val allApps = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getInstalledApplications(
+                    PackageManager.ApplicationInfoFlags.of(PackageManager.GET_META_DATA.toLong())
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+            }
+            allApps.filter(::hasInternetPermission)
         }
 
-        applications.asSequence()
+        appInfos.asSequence()
             .filter { it.packageName != appContext.packageName }
-            .filter(::hasInternetPermission)
             .mapNotNull { info ->
                 try {
+                    val label = packageManager.getApplicationLabel(info).toString()
+                    val rawIcon = packageManager.getApplicationIcon(info)
+                    val scaledBitmap = rawIcon.toScaledBitmap(96)
                     InstalledApp(
-                        label = packageManager.getApplicationLabel(info).toString(),
+                        label = label,
                         packageName = info.packageName,
                         uid = info.uid,
                         kind = if ((info.flags and ApplicationInfo.FLAG_SYSTEM) != 0) {
@@ -49,7 +65,7 @@ class InstalledAppsProvider(context: Context) {
                         } else {
                             InstalledAppKind.USER
                         },
-                        icon = packageManager.getApplicationIcon(info)
+                        iconBitmap = scaledBitmap
                     )
                 } catch (_: PackageManager.NameNotFoundException) {
                     null
@@ -83,4 +99,14 @@ class InstalledAppsProvider(context: Context) {
         } else {
             getPackageInfo(packageName, PackageManager.GET_PERMISSIONS)
         }
+
+    private fun Drawable.toScaledBitmap(targetSize: Int): Bitmap {
+        val width = intrinsicWidth.takeIf { it > 0 } ?: targetSize
+        val height = intrinsicHeight.takeIf { it > 0 } ?: targetSize
+        val bitmap = Bitmap.createBitmap(targetSize, targetSize, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        setBounds(0, 0, targetSize, targetSize)
+        draw(canvas)
+        return bitmap
+    }
 }

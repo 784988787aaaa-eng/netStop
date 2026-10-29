@@ -36,8 +36,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             while (true) {
                 val label = NetLimiterVpnService.activeModeLabel
                 val running = NetLimiterVpnService.isRunning
-                val uids = _uiState.value.allApps.asSequence().map { it.app.uid }.distinct().toList()
-                withContext(Dispatchers.IO) { uids.forEach { uid -> TrafficStatsTracker.sampleSystemUid(uid) } }
+                val restrictedUids = _uiState.value.allApps.asSequence()
+                    .filter { it.isRestricted }
+                    .map { it.app.uid }
+                    .distinct()
+                    .toList()
+                if (restrictedUids.isNotEmpty()) {
+                    withContext(Dispatchers.IO) {
+                        restrictedUids.forEach { uid -> TrafficStatsTracker.sampleSystemUid(uid) }
+                    }
+                }
                 val rates = TrafficStatsTracker.snapshots().associate { it.uid to it.bytesPerSecond }
                 _uiState.update { state ->
                     state.copy(
@@ -103,11 +111,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setWifiEnabled(uid: Int, packageName: String, enabled: Boolean) {
-        setPolicy(uid, packageName, RuleNetworkTarget.WIFI, if (enabled) NetworkPolicy.THROTTLE else NetworkPolicy.ALLOW)
+        setPolicy(uid, packageName, RuleNetworkTarget.WIFI, if (enabled) NetworkPolicy.BLOCK else NetworkPolicy.ALLOW)
     }
 
     fun setMobileDataEnabled(uid: Int, packageName: String, enabled: Boolean) {
-        setPolicy(uid, packageName, RuleNetworkTarget.MOBILE, if (enabled) NetworkPolicy.THROTTLE else NetworkPolicy.ALLOW)
+        setPolicy(uid, packageName, RuleNetworkTarget.MOBILE, if (enabled) NetworkPolicy.BLOCK else NetworkPolicy.ALLOW)
     }
 
     fun setTargetNetwork(uid: Int, packageName: String, target: RuleNetworkTarget) {

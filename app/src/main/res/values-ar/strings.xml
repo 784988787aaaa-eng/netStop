@@ -26,6 +26,7 @@
     <string name="loading_apps">جارٍ تحميل التطبيقات…</string>
     <string name="no_apps">لا توجد تطبيقات مطابقة</string>
     <string name="apply">تطبيق</string>
+    <string name="cancel">إلغاء</string>
     <string name="custom_speed">سرعة مخصصة</string>
     <string name="speed_k">%1$d ك</string>
     <string name="speed_1m">١ م</string>

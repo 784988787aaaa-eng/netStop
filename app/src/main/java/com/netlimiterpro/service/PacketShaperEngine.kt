@@ -85,10 +85,90 @@ class PacketShaperEngine(
     ) {
         stop()
         updateRules(rules, networkKind, defaultLimitBytesPerSecond)
-        // Safety invariant: never read from a TUN descriptor until a forwarding
-        // backend can accept and relay every packet. Reading and delaying alone
-        // would discard packets and silently break network connectivity.
-        stopped.set(true)
+        stopped.set(false)
+        readerJob = scope.launch(Dispatchers.IO) {
+            val inputStream = runCatching { FileInputStream(tun.fileDescriptor) }.getOrNull() ?: return@launch
+            val outputStream = runCatching { java.io.FileOutputStream(tun.fileDescriptor) }.getOrNull()
+            val buffer = ByteArray(32768)
+            val isWifi = networkKind == ActiveNetworkKind.WIFI
+
+            while (isActive && !stopped.get()) {
+                val count = runCatching { inputStream.read(buffer) }.getOrDefault(-1)
+                if (count <= 0) {
+                    delay(5L)
+                    continue
+                }
+                val packet = parsePacket(buffer, count) ?: continue
+                val uid = findOwnerUid(packet)
+                onPacketObserved(packet, uid)
+
+                // Check policy: drop packets for blocked applications
+                val isBlocked = if (uid != null) {
+                    activeRules.any { it.uid == uid && it.policyFor(isWifi) == NetworkPolicy.BLOCK }
+                } else {
+                    activeRules.isNotEmpty() && activeRules.all { it.policyFor(isWifi) == NetworkPolicy.BLOCK }
+                }
+                if (isBlocked) {
+                    // Packet dropped silently (Sinkhole firewall cut)
+                    continue
+                }
+
+                // For non-blocked UDP DNS traffic (port 53), relay via protected socket so resolution works
+                if (outputStream != null && packet.isUdp && packet.destinationPort == 53 &&
+                    packet.sourceAddress is Inet4Address && packet.destinationAddress is Inet4Address &&
+                    count >= 28
+                ) {
+                    relayDns(packet, buffer, count, outputStream)
+                }
+            }
+            runCatching { inputStream.close() }
+            runCatching { outputStream?.close() }
+        }
+    }
+
+    private fun relayDns(
+        packet: ParsedIpPacket,
+        buffer: ByteArray,
+        packetLength: Int,
+        outputStream: java.io.FileOutputStream
+    ) {
+        val ipHeaderLen = (buffer[0].toInt() and 0x0F) * 4
+        val udpHeaderOffset = ipHeaderLen
+        val payloadOffset = udpHeaderOffset + 8
+        if (payloadOffset > packetLength) return
+        val payloadLength = packetLength - payloadOffset
+        val queryData = buffer.copyOfRange(payloadOffset, payloadOffset + payloadLength)
+
+        runCatching {
+            val socket = java.net.DatagramSocket()
+            try {
+                if (!service.protect(socket)) return@runCatching
+                socket.soTimeout = 2000
+                val sendPacket = java.net.DatagramPacket(
+                    queryData, queryData.size,
+                    packet.destinationAddress, 53
+                )
+                socket.send(sendPacket)
+                val responseBuf = ByteArray(4096)
+                val responsePacket = java.net.DatagramPacket(responseBuf, responseBuf.size)
+                socket.receive(responsePacket)
+
+                val replyPayload = responsePacket.data.copyOf(responsePacket.length)
+                val replyIpPacket = buildIpv4UdpPacket(
+                    source = packet.destinationAddress as Inet4Address,
+                    destination = packet.sourceAddress as Inet4Address,
+                    sourcePort = 53,
+                    destinationPort = packet.sourcePort ?: 53,
+                    payload = replyPayload
+                )
+                synchronized(outputStream) {
+                    outputStream.write(replyIpPacket)
+                    outputStream.flush()
+                }
+            } finally {
+                socket.close()
+            }
+        }
     }
 
     suspend fun stopAndJoin() {
