@@ -389,7 +389,7 @@ private fun DefaultSpeedDialog(
         title = { Text(stringResource(R.string.default_limit)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.speed_limit), fontSize = 12.sp)
+                Text(stringResource(R.string.custom_speed), fontSize = 12.sp)
                 OutlinedTextField(
                     value = input,
                     onValueChange = { candidate ->
@@ -467,7 +467,7 @@ private fun AppRow(
                 Switch(
                     checked = row.rule.wifiPolicy != NetworkPolicy.ALLOW,
                     onCheckedChange = onToggleWifi,
-                    modifier = Modifier.scale(0.72f)
+                    modifier = Modifier.scale(0.8f)
                 )
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -475,7 +475,7 @@ private fun AppRow(
                 Switch(
                     checked = row.rule.mobilePolicy != NetworkPolicy.ALLOW,
                     onCheckedChange = onToggleMobile,
-                    modifier = Modifier.scale(0.72f)
+                    modifier = Modifier.scale(0.8f)
                 )
             }
         }

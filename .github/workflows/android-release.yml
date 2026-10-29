@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-release:
-    name: Build Signed NetBalancer APK & AAB
+    name: Build Signed NetLimiterPro APK & AAB
     # تثبيت بيئة التشغيل المستقرة ubuntu-24.04 لتجنب مشاكل ترقية Ubuntu 26 وتعطل إضافات Node 20 القديمة
     runs-on: ubuntu-24.04
 
@@ -99,7 +99,7 @@ jobs:
       - name: 6. Run Unit Tests
         shell: bash
         run: |
-          gradle :app:testDebugUnitTest --tests "com.example.ExampleUnitTest" --no-daemon
+          gradle :app:testDebugUnitTest --no-daemon
 
       - name: 7. Build Signed Release APK & AAB
         shell: bash
@@ -115,13 +115,13 @@ jobs:
       - name: 9. Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: NetBalancer-Release-APK
+          name: NetLimiterPro-Release-APK
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
       - name: 10. Upload Signed Release AAB (Google Play Bundle)
         uses: actions/upload-artifact@v4
         with:
-          name: NetBalancer-Release-AAB
+          name: NetLimiterPro-Release-AAB
           path: app/build/outputs/bundle/release/*.aab
           if-no-files-found: error

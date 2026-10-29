@@ -12,6 +12,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
+import java.io.FileInputStream
 import com.netlimiterpro.R
 import com.netlimiterpro.data.repository.RuleRepository
 import com.netlimiterpro.domain.model.AppRule
