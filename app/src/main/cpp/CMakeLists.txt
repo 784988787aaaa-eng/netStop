@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(netlimiter_tun2socks C)
+add_library(netlimiter_tun2socks SHARED tun2socks_jni.c)
+find_library(log-lib log)
+target_link_libraries(netlimiter_tun2socks ${log-lib})
+target_compile_features(netlimiter_tun2socks PRIVATE c_std_11)

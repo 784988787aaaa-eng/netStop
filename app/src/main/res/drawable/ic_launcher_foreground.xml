@@ -4,18 +4,14 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Shield outer hexagon -->
-    <path
-        android:fillColor="#FF141C2F"
-        android:strokeColor="#FF4F8CFF"
-        android:strokeWidth="3.5"
-        android:pathData="M54,22 L80,34 L80,56 C80,71 69,82 54,87 C39,82 28,71 28,56 L28,34 Z" />
-    <!-- Download arrow (Teal #2DD4BF) -->
-    <path
-        android:fillColor="#FF2DD4BF"
-        android:pathData="M43,39 L49,39 L49,58 L54,58 L46,68 L38,58 L43,58 Z" />
-    <!-- Upload arrow (Violet #A78BFA) -->
-    <path
-        android:fillColor="#FFA78BFA"
-        android:pathData="M62,38 L70,48 L65,48 L65,67 L59,67 L59,48 L54,48 Z" />
+    <!-- Shield silhouette kept inside the 66dp central safe zone. -->
+    <path android:fillColor="#00E5FF" android:pathData="M54,18 L82,29 V48 C82,65 70,79 54,87 C38,79 26,65 26,48 V29 Z" />
+    <path android:fillColor="#0B192C" android:pathData="M54,24 L76,32.7 V48 C76,61.7 66.9,73.2 54,80 C41.1,73.2 32,61.7 32,48 V32.7 Z" />
+    <!-- Speedometer arc and calibrated ticks. -->
+    <path android:fillColor="#00E5FF" android:pathData="M37,53 A17,17 0,0 1,71 53 L66,53 A12,12 0,0 0,42 53 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M38.4,44.2 L42.1,46.3 L40.4,49.1 L36.7,47 Z M46.1,37.8 L48.9,36.8 L50.1,40.8 L47.3,41.8 Z M57.9,40.8 L59.1,36.8 L61.9,37.8 L60.7,41.8 Z M67.6,49.1 L65.9,46.3 L69.6,44.2 L71.3,47 Z" />
+    <!-- Needle, pivot and lower shield detail. -->
+    <path android:fillColor="#FFFFFF" android:pathData="M52.1,53.3 L62.4,41.9 L57.5,56.1 Z" />
+    <path android:fillColor="#00E5FF" android:pathData="M47,61 L61,61 L58.8,66 L54,69 L49.2,66 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M54,50.4 A2.8,2.8 0,1 0,54 56 A2.8,2.8 0,1 0,54 50.4 Z" />
 </vector>

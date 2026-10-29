@@ -1,54 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">NetBalancer</string>
-    <string name="app_subtitle">Smart Network Monitor &amp; Traffic Shaper</string>
-    <string name="notification_channel_name">NetBalancer Network Engine</string>
-    <string name="notification_channel_desc">Local VPN firewall and live traffic monitoring status</string>
+    <string name="app_name">NetLimiter Pro</string>
+    <string name="service_start">Start</string>
+    <string name="service_stop">Stop</string>
+    <string name="search_apps">Search apps</string>
+    <string name="filter_all">All apps</string>
+    <string name="filter_user">User apps</string>
+    <string name="filter_system">System apps</string>
+    <string name="default_limit">Default limit</string>
+    <string name="wifi">Wi-Fi</string>
+    <string name="mobile_data">Mobile data</string>
+    <string name="speed_limit">Speed limit</string>
+    <string name="unlimited">Unlimited</string>
+    <string name="unit_kb_per_second">KB/s</string>
+    <string name="unit_mb_per_second">MB/s</string>
+    <string name="permission_required">VPN permission is required.</string>
+    <string name="service_running">VPN service running</string>
+    <string name="service_stopped">VPN service stopped</string>
+    <string name="invalid_speed">Enter a valid non-negative speed.</string>
+    <string name="settings">Settings</string>
+    <string name="uid">UID</string>
+    <string name="status_enabled">Enabled</string>
+    <string name="status_disabled">Disabled</string>
 
-    <!-- Navigation -->
-    <string name="nav_dashboard">Dashboard</string>
-    <string name="nav_applications">Apps</string>
-    <string name="nav_stats">Stats</string>
-    <string name="nav_quotas">Quotas</string>
-    <string name="nav_rules">Rules</string>
-    <string name="nav_settings">Settings</string>
-    <string name="nav_app_details">App Details</string>
+    <string name="loading_apps">Loading apps…</string>
+    <string name="no_apps">No matching apps</string>
+    <string name="apply">Apply</string>
+    <string name="custom_speed">Custom speed</string>
+    <string name="speed_k">%1$dK</string>
+    <string name="speed_1m">1M</string>
 
-    <!-- Engine States & Actions -->
-    <string name="engine_stopped_title">Engine Stopped</string>
-    <string name="engine_stopped_desc">Monitoring usage only. Start the engine to enforce rules and speed limits.</string>
-    <string name="engine_awaiting_consent_title">VPN Permission Required</string>
-    <string name="engine_awaiting_consent_desc">Approve the system VPN prompt to activate local traffic control.</string>
-    <string name="engine_starting_title">Starting Engine…</string>
-    <string name="engine_starting_desc">Initializing local TUN interface and policy pipeline.</string>
-    <string name="engine_running_title">Engine Active</string>
-    <string name="engine_running_desc">Local VPN active. Enforcing firewall rules, quotas, and speed limits.</string>
-    <string name="engine_stopping_title">Stopping Engine…</string>
-    <string name="engine_stopping_desc">Releasing TUN interface and returning to passive monitoring.</string>
-    <string name="engine_failed_title">Engine Failed to Start</string>
-    <string name="engine_failed_desc">Could not establish local VPN interface. Check permissions and try again.</string>
-    <string name="engine_revoked_title">VPN Permission Revoked</string>
-    <string name="engine_revoked_desc">VPN access was revoked by system settings or another VPN app.</string>
+    <string name="speed_value_kb">%1$.0f KB/s</string>
+    <string name="speed_value_mb">%1$.1f MB/s</string>
 
-    <string name="action_start_engine">Start Engine</string>
-    <string name="action_stop_engine">Stop Engine</string>
-    <string name="action_retry_engine">Retry Engine</string>
-    <string name="action_grant_vpn">Grant VPN Permission</string>
-    <string name="action_self_test">Verify Pipeline</string>
-
-    <!-- Pre-VPN Consent Dialog -->
-    <string name="vpn_consent_dialog_title">Local VPN Traffic Control</string>
-    <string name="vpn_consent_dialog_body">NetBalancer uses Android\'s local VpnService to filter app connections and enforce speed limits directly on your device.\n\n• 100% on-device processing.\n• No external VPN servers.\n• Packet payloads are never inspected or uploaded.</string>
-    <string name="vpn_consent_continue">Continue</string>
-    <string name="action_cancel">Cancel</string>
-
-    <!-- Common Labels -->
-    <string name="label_download">Download</string>
-    <string name="label_upload">Upload</string>
-    <string name="label_today_usage">Today\'s Usage</string>
-    <string name="label_wifi">Wi-Fi</string>
-    <string name="label_cellular">Cellular</string>
-    <string name="label_unavailable">Usage data unavailable</string>
-    <string name="label_no_rules">No custom rules yet</string>
-    <string name="label_no_quotas">No data quotas set</string>
-    <string name="label_no_events">No events recorded yet</string>
+    <string name="vpn_notification_channel">Network limiter</string>
+    <string name="vpn_notification_description">Network limiter service status</string>
+    <string name="vpn_service_active">Service active · Network: %1$s · Mode: %2$s</string>
+    <string name="network_wifi">Wi-Fi</string>
+    <string name="network_mobile">Mobile data</string>
+    <string name="network_other">Other network</string>
+    <string name="network_offline">Offline</string>
+    <string name="fgs_special_use_subtype">Local VPN policy monitoring and traffic shaping</string>
+    <string name="mode_detecting">Detecting enforcement mode</string>
+    <string name="mode_root_iptables">Kernel Root (iptables hashlimit/drop)</string>
+    <string name="mode_local_proxy">Local VPN Proxy Shaper</string>
+    <string name="mode_proxy_requires_q">Local proxy requires Android 10+</string>
+    <string name="mode_no_active_rules">No active limits for current network</string>
+    <string name="mode_unavailable">Enforcement unavailable</string>
+    <string name="mode_inactive">Inactive</string>
+    <string name="active_mode_label">Active mode: %1$s</string>
+    <string name="keep_alive">Keep Alive</string>
+    <string name="proxy_socks5_supported">Local proxy supports SOCKS5 CONNECT and HTTP CONNECT</string>
+    <string name="tun2socks_native_unavailable">Native full-tunnel backend unavailable; safe proxy mode retained</string>
+    <string name="vpn_service_active_traffic">Service active · Network: %1$s · Mode: %2$s · Traffic: %3$s</string>
+    <string name="traffic_rate_bytes">%1$d B/s</string>
+    <string name="block_all_wifi">Block all Wi-Fi</string>
+    <string name="allow_all_wifi">Allow all Wi-Fi</string>
+    <string name="block_all_mobile">Block all mobile</string>
+    <string name="allow_all_mobile">Allow all mobile</string>
+    <string name="throttle_all_default">Throttle all to default</string>
+    <string name="policy_allow">Allow</string>
+    <string name="policy_throttle">Throttle</string>
+    <string name="policy_block">Block</string>
+    <string name="network_both">Both</string>
+    <string name="live_now">Now</string>
+    <string name="mode_sinkhole_block">VPN sinkhole: BLOCK apps only</string>
+    <string name="tc_shaping_mode">tc HTB shaping with iptables hashlimit fallback</string>
 </resources>

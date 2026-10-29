@@ -1,6 +1,0 @@
-{
-  "name": "NetBalancer",
-  "description": "نت بالانسر — مدير حركة الإنترنت ومراقب السرعة والحصص وقواعد التحكم للتطبيقات على أندرويد",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
